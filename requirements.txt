@@ -3,3 +3,4 @@ pandas
 unidecode
 tqdm
 rapidfuzz
+shapely

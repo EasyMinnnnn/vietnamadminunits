@@ -5,3 +5,4 @@ tqdm
 rapidfuzz
 shapely
 geopy
+distributed

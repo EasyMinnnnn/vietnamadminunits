@@ -5,27 +5,34 @@ from vietnamadminunits.parser import ParseMode
 st.set_page_config(page_title="Chuẩn hóa địa chỉ", layout="centered")
 st.title("📍 Công cụ chuẩn hóa địa chỉ Việt Nam")
 
+# Nhập địa chỉ
 address_input = st.text_input("🔤 Nhập địa chỉ cần chuẩn hóa", "Số 1 Nguyễn Trãi, Thanh Xuân, Hà Nội")
-mode_str = st.selectbox("🛠️ Chế độ chuẩn hóa", [m.value for m in ParseMode])
-mode = mode_str
 
+# Lựa chọn chế độ
+mode_str = st.selectbox("🛠️ Chế độ chuẩn hóa", [m.value for m in ParseMode])  # ['LEGACY', 'FROM_2025']
+mode = mode_str  # hoặc ParseMode(mode_str) nếu muốn dùng Enum
+
+# Khi nhấn nút
 if st.button("✅ Phân tích"):
     try:
+        # Gọi hàm chuẩn hóa
         parsed = parse_address(address_input, mode=mode)
-        converted = convert_address(address_input)
-    except Exception as e:
-        st.error(f"❌ Lỗi: {e}")
-        parsed = None
-        converted = None
-
-    if isinstance(parsed, dict):
         st.subheader("📌 Kết quả phân tích:")
-        st.json(parsed)
-    else:
-        st.error("Kết quả phân tích không hợp lệ.")
+        st.write("🧪 Debug (parsed):", parsed)
+        if isinstance(parsed, dict):
+            st.json(parsed)
+        else:
+            st.warning("⚠️ Kết quả phân tích không hợp lệ.")
 
-    if isinstance(converted, dict):
+        # Gọi hàm chuyển đổi
+        converted = convert_address(parsed)  # thử truyền parsed thay vì raw text
         st.subheader("🔁 Kết quả chuẩn hóa 34 tỉnh:")
-        st.json(converted)
-    else:
-        st.error("Kết quả chuẩn hóa không hợp lệ.")
+        st.write("🧪 Debug (converted):", converted)
+        if isinstance(converted, dict):
+            st.json(converted)
+        else:
+            st.warning("⚠️ Kết quả chuẩn hóa không hợp lệ.")
+
+    except Exception as e:
+        st.error("❌ Đã xảy ra lỗi trong quá trình xử lý.")
+        st.exception(e)

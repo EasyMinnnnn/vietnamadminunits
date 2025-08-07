@@ -4,3 +4,4 @@ unidecode
 tqdm
 rapidfuzz
 shapely
+geopy

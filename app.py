@@ -1,68 +1,70 @@
 import streamlit as st
 import pandas as pd
-from vietnamadminunits import parse_address, convert_address, ParseMode, ConvertMode
-from vietnamadminunits.pandas import convert_address_column, standardize_admin_unit_columns
+from vietnamadminunits import parse_address, convert_address
+from vietnamadminunits.parser import ParseMode
+from vietnamadminunits.converter import ConvertMode
 
-st.set_page_config(page_title="Chuẩn hóa địa chỉ hàng loạt", layout="wide")
-st.title("📍 Công cụ chuẩn hóa và chuyển đổi địa chỉ Việt Nam")
+st.set_page_config(page_title="Chuẩn hóa địa chỉ", layout="wide")
+st.title("📍 Công cụ chuẩn hóa địa chỉ Việt Nam")
 
-# Sidebar navigation
-page = st.sidebar.radio("Chọn chế độ xử lý:", ["🔍 Phân tích từng địa chỉ", "📂 Xử lý hàng loạt từ file CSV"])
+with st.sidebar:
+    st.header("⚙️ Tùy chọn")
+    mode_str = st.selectbox("🛠️ Chế độ phân tích", [m.value for m in ParseMode])
+    convert_mode = st.checkbox("🔁 Chuyển đổi sang 34 tỉnh", value=False)
 
-if page == "🔍 Phân tích từng địa chỉ":
-    st.subheader("🔤 Nhập địa chỉ cần chuẩn hóa")
-    address = st.text_input("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
-    
-    mode = st.selectbox("🛠️ Chế độ phân tích", ["LEGACY", "FROM_2025"])
+mode = ParseMode(mode_str)
 
-    if st.button("✅ Phân tích") and address:
+# Một địa chỉ
+st.subheader("📌 Nhập địa chỉ để chuẩn hóa")
+address_input = st.text_input("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
+
+if st.button("Phân tích địa chỉ"):
+    try:
+        parsed = parse_address(address_input, mode=mode)
+        st.success("🎯 Phân tích thành công:")
+
+        if hasattr(parsed, '__dict__'):
+            st.json(parsed.__dict__)
+        else:
+            st.write(parsed)
+
+        if convert_mode:
+            converted = convert_address(address_input)
+            st.subheader("🔁 Sau chuyển đổi (chuẩn hóa 34 tỉnh):")
+            if hasattr(converted, '__dict__'):
+                st.json(converted.__dict__)
+            else:
+                st.write(converted)
+    except Exception as e:
+        st.error(f"❌ Đã xảy ra lỗi: {e}")
+
+# Upload file CSV
+st.subheader("📂 Hoặc tải lên file CSV để xử lý hàng loạt")
+uploaded_file = st.file_uploader("Tải lên file chứa cột địa chỉ", type="csv")
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.write("📄 Xem trước dữ liệu:")
+    st.dataframe(df.head())
+
+    address_column = st.selectbox("🧩 Chọn cột chứa địa chỉ", df.columns)
+    process = st.radio("🔎 Thao tác", ["Phân tích (parse)", "Chuyển đổi (convert)"])
+
+    results = []
+    for addr in df[address_column]:
         try:
-            parsed = parse_address(address, mode=ParseMode(mode))
-            st.success("🎯 Phân tích thành công:")
-            st.json(parsed.to_dict())
-
-            if st.checkbox("🔁 Chuyển sang 34 tỉnh"):
-                converted = convert_address(address)
-                st.markdown("### ✅ Kết quả sau chuyển đổi:")
-                st.json(converted.to_dict())
-
+            if process == "Phân tích (parse)":
+                res = parse_address(addr, mode=mode)
+                results.append(res.__dict__ if hasattr(res, '__dict__') else str(res))
+            else:
+                res = convert_address(addr)
+                results.append(res.__dict__ if hasattr(res, '__dict__') else str(res))
         except Exception as e:
-            st.error(f"❌ Đã xảy ra lỗi: {e}")
+            results.append({"error": str(e)})
 
-elif page == "📂 Xử lý hàng loạt từ file CSV":
-    st.subheader("📤 Tải lên file CSV")
-    uploaded_file = st.file_uploader("Chọn file chứa địa chỉ", type="csv")
+    result_df = pd.DataFrame(results)
+    st.subheader("✅ Kết quả xử lý:")
+    st.dataframe(result_df)
 
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.markdown("### 🧾 Xem trước dữ liệu:")
-        st.dataframe(df.head())
-
-        method = st.selectbox("🔧 Chọn kiểu xử lý", ["Chuẩn hóa cột tỉnh/xã/huyện", "Chuyển đổi địa chỉ 63→34 tỉnh"])
-
-        if method == "Chuẩn hóa cột tỉnh/xã/huyện":
-            province_col = st.selectbox("Cột tỉnh", df.columns)
-            district_col = st.selectbox("Cột huyện (tùy chọn)", [None] + list(df.columns))
-            ward_col = st.selectbox("Cột xã/phường (tùy chọn)", [None] + list(df.columns))
-
-            if st.button("🚀 Tiến hành chuẩn hóa"):
-                result = standardize_admin_unit_columns(
-                    df,
-                    province=province_col,
-                    district=district_col if district_col else None,
-                    ward=ward_col if ward_col else None,
-                    convert_mode=ConvertMode.CONVERT_2025,
-                    show_progress=True
-                )
-                st.success("✅ Đã chuẩn hóa thành công")
-                st.dataframe(result.head())
-                st.download_button("📥 Tải xuống kết quả", result.to_csv(index=False), "ket_qua_chuanhoa.csv", "text/csv")
-
-        elif method == "Chuyển đổi địa chỉ 63→34 tỉnh":
-            address_col = st.selectbox("Chọn cột địa chỉ", df.columns)
-
-            if st.button("🚀 Tiến hành chuyển đổi"):
-                result = convert_address_column(df, address=address_col)
-                st.success("✅ Đã chuyển đổi thành công")
-                st.dataframe(result.head())
-                st.download_button("📥 Tải xuống kết quả", result.to_csv(index=False), "ket_qua_chuyendoi.csv", "text/csv")
+    csv = result_df.to_csv(index=False).encode('utf-8')
+    st.download_button("⬇️ Tải kết quả về", csv, "ket_qua.csv", "text/csv")

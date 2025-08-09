@@ -10,22 +10,23 @@ import streamlit as st
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column, standardize_admin_unit_columns  # noqa
 
-# ---------------- THEME / SETUP ----------------
+# ---------------- BASIC SETUP ----------------
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-PRIMARY = "#066E68"       # emerald
-PRIMARY_DARK = "#0C5B57"
-PRIMARY_MID  = "#0E6963"
+# Brand colors
+PRIMARY = "#066E68"       # emerald (table/header)
+PRIMARY_DARK = "#0C5B57"  # not used directly but handy
+PRIMARY_MID  = "#0E6963"  # sidebar, gradients
 GOLD    = "#D7C187"
 WHITE   = "#FFFFFF"
 
-# ---------------- CSS / FONT ----------------
+# ---------------- CSS (Template, 100% hidden, safe with %) ----------------
 css_tpl = Template(r"""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 
-/* Background tổng thể */
+/* Background tổng thể + CSS vars */
 .stApp{
   background: radial-gradient(1200px 600px at 15% 0%, #107973 0%, #0D5F5B 40%, #0C5B57 70%);
   color:#fff;
@@ -36,51 +37,80 @@ html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, Seg
 }
 
 /* HERO */
-.hero{ position:relative; padding:30px 28px 26px 28px; background: linear-gradient(180deg, #0F7B74 0%, #0E6963 100%); border-bottom-left-radius:22px; border-bottom-right-radius:22px; box-shadow: var(--shadow); margin-bottom:26px; }
-.hero:before{ content:""; position:absolute; left:28px; right:28px; top:10px; height:7px; background: $GOLD; border-radius:9px; }
+.hero{
+  position:relative;
+  padding:30px 28px 26px 28px;
+  background: linear-gradient(180deg, #0F7B74 0%, $PRIMARY_MID 100%);
+  border-bottom-left-radius:22px;
+  border-bottom-right-radius:22px;
+  box-shadow: var(--shadow);
+  margin-bottom:26px;
+}
+.hero:before{
+  content:"";
+  position:absolute;
+  left:28px; right:28px; top:10px; height:7px;
+  background: $GOLD; border-radius:9px;
+}
 .hero h1{ margin:0 0 6px 0; font-weight:800; letter-spacing:.2px; }
 .hero p{ margin:0; color:#EAF7F6; opacity:.95; }
 
 /* Sidebar */
-[data-testid="stSidebar"] > div:first-child{
-  background: $PRIMARY_MID;
-}
+[data-testid="stSidebar"] > div:first-child{ background: $PRIMARY_MID; }
 section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3{
-  color: $GOLD;
-}
+section[data-testid="stSidebar"] h3{ color: $GOLD; }
 
 /* Cards (glassmorphism) */
-.card{ background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow); padding: 18px; margin: 10px 0 22px 0; backdrop-filter: blur(6px); }
+.card{
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin: 10px 0 22px 0;
+  backdrop-filter: blur(6px);
+}
 .card .card-title{ font-weight:800; margin-bottom:10px; }
 
 /* Inputs */
-.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stTextArea textarea, .stNumberInput input{
-  background:#fff !important; color:#000 !important; border-radius:12px !important; border:1px solid #E6E6E6 !important; height:46px;
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
+.stTextArea textarea, .stNumberInput input{
+  background:#fff !important; color:#000 !important;
+  border-radius:12px !important; border:1px solid #E6E6E6 !important; height:46px;
 }
 
 /* Buttons */
-.stButton > button{ background: $GOLD !important; color:#000 !important; border:0; border-radius: var(--radius-lg); font-weight:800; padding:12px 18px; box-shadow: 0 8px 18px rgba(0,0,0,.22); transition: transform .05s ease, filter .15s ease; }
+.stButton > button{
+  background: $GOLD !important; color:#000 !important; border:0;
+  border-radius: var(--radius-lg); font-weight:800; padding:12px 18px;
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+  transition: transform .05s ease, filter .15s ease;
+}
 .stButton > button:hover{ filter:brightness(.97); }
 .stButton > button:active{ transform: translateY(1px); }
 
 /* Table header */
-[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{ background: $PRIMARY !important; color:#fff !important; font-weight:700 !important; }
+[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
+  background: $PRIMARY !important; color:#fff !important; font-weight:700 !important;
+}
 
 /* Alerts */
 .stAlert.success{ background: rgba(6,110,104,.18) !important; border-left: 4px solid $GOLD !important; }
 .stAlert.warning{ background: rgba(192,126,0,.18) !important; border-left: 4px solid #C07E00 !important; }
-.stAlert.error { background: rgba(160,0,0,.18) !important; border-left: 4px solid #A00000 !important; }
+.stAlert.error  { background: rgba(160,0,0,.18) !important;   border-left: 4px solid #A00000 !important; }
 
 /* Skeleton shimmer */
-.skel{ background: linear-gradient(90deg, rgba(255,255,255,.08) 25%, rgba(255,255,255,.15) 37%, rgba(255,255,255,.08) 63%); border-radius: 10px; height: 42px; animation: shimmer 1.2s infinite; }
+.skel{
+  background: linear-gradient(90deg, rgba(255,255,255,.08) 25%, rgba(255,255,255,.15) 37%, rgba(255,255,255,.08) 63%);
+  border-radius: 10px; height: 42px; animation: shimmer 1.2s infinite;
+}
 @keyframes shimmer { 0%{background-position:-300px 0} 100%{background-position:300px 0} }
 
-/* Bố cục */
+/* Layout */
 .block-container{ padding-top: .6rem; max-width: 1200px; margin: 0 auto; }
 </style>
 """)
-st.markdown(css_tpl.substitute(GOLD=GOLD, PRIMARY_MID=PRIMARY_MID, PRIMARY=PRIMARY), unsafe_allow_html=True)
+st.markdown(css_tpl.substitute(GOLD=GOLD, PRIMARY=PRIMARY, PRIMARY_MID=PRIMARY_MID), unsafe_allow_html=True)
 
 # ---------------- HERO ----------------
 st.markdown(

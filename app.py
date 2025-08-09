@@ -9,7 +9,90 @@ from vietnamadminunits.pandas import (
     standardize_admin_unit_columns,
 )
 
+# ---------------- Theme & CSS injection ----------------
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
+
+PRIMARY = "#066E68"   # emerald (xanh ngọc)
+GOLD    = "#D7C187"   # viền vàng nhạt
+BG      = "#0C5B57"   # nền chính
+BG2     = "#0E6963"   # nền khối/box
+
+st.markdown(f"""
+<style>
+/* Toàn app */
+.stApp {{
+  background: {BG};
+  color: #fff;
+}}
+
+/* Thanh top-bar (viền vàng bo tròn góc phải) */
+.topbar {{
+  height: 52px;
+  background: {GOLD};
+  border-bottom-left-radius: 14px;
+}}
+
+/* Container chính: giảm khoảng trống top để ô topbar sát nội dung */
+.block-container {{
+  padding-top: 0rem;
+}}
+
+/* Sidebar */
+[data-testid="stSidebar"] > div:first-child {{
+  background: {BG2};
+}}
+
+/* Tiêu đề */
+h1, h2, h3, h4 {{
+  color: {GOLD};
+  font-weight: 700;
+}}
+
+/* Nút bấm */
+.stButton > button {{
+  background: {GOLD} !important;
+  color: #000 !important;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+}}
+.stButton > button:hover {{
+  filter: brightness(0.95);
+}}
+
+/* Input / select / text area */
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
+.stTextArea textarea {{
+  background: #ffffff !important;
+  color: #000 !important;
+  border-radius: 10px !important;
+}}
+
+/* Bảng dữ liệu: header tone theo chủ đạo */
+[data-testid="stTable"] thead tr th, .stDataFrame thead tr th {{
+  background: {PRIMARY}22 !important;
+  color: #fff !important;
+}}
+
+/* Alert thẩm mỹ */
+.stAlert.success {{
+  background: {PRIMARY}33 !important;
+  border-left: 4px solid {GOLD} !important;
+}}
+.stAlert.warning {{
+  background: #C07E0026 !important;
+  border-left: 4px solid #C07E00 !important;
+}}
+.stAlert.error {{
+  background: #A0000026 !important;
+  border-left: 4px solid #A00000 !important;
+}}
+</style>
+""", unsafe_allow_html=True)
+
+# Vẽ thanh topbar vàng
+st.markdown('<div class="topbar"></div>', unsafe_allow_html=True)
+
 st.title("📍 Công cụ chuẩn hóa địa chỉ Việt Nam")
 
 # -------- Sidebar controls --------

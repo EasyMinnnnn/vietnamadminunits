@@ -14,113 +14,88 @@ from vietnamadminunits.pandas import convert_address_column, standardize_admin_u
 # ---------------- BASIC SETUP ----------------
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# Brand tokens
-EMERALD_900 = "#0B4F4B"
-EMERALD_800 = "#0E6963"   # sidebar, blocks
-EMERALD_700 = "#066E68"   # table header, accents
-GOLD         = "#D7C187"  # brand highlight
-TEXT_LIGHT   = "#F3FBFA"
-TEXT_MUTED   = "#D2EDEB"
+# Brand palette (BIDV-like)
+GOLD          = "#D4AF37"  # gold đậm kiểu BIDV
+EMERALD_900   = "#0B4F4B"
+EMERALD_800   = "#0E6963"
+EMERALD_700   = "#066E68"
+EMERALD_600   = "#0F7B74"
+TEXT_LIGHT    = "#F3FBFA"
+TEXT_MUTED    = "#CEEDEA"
 
-# ---------------- CSS (via components.html để không bị in ra) ----------------
+# ---------------- CSS (inject via components.html) ----------------
 css_tpl = Template("""
 <style>
 :root{
-  --bg: linear-gradient(180deg, #0E6963 0%, #0B5450 100%);
+  --bg: linear-gradient(180deg, ${EMERALD_800} 0%, ${EMERALD_900} 100%);
   --panel: rgba(255,255,255,.045);
   --panel-border: rgba(255,255,255,.08);
   --shadow: 0 12px 32px rgba(0,0,0,.28);
   --r-lg: 14px; --r-xl: 18px;
 }
 
-/* App background + typography */
-html, body, [class*="css"]{
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-}
-.stApp{
-  background: var(--bg);
-  color: ${TEXT_LIGHT};
-}
+html, body, [class*="css"]{ font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+.stApp{ background: var(--bg); color: ${TEXT_LIGHT}; }
 
 /* Sidebar */
-[data-testid="stSidebar"] > div:first-child{
-  background: ${EMERALD_800};
-}
-section[data-testid="stSidebar"] h2,
-section[data-testid="stSidebar"] h3{ color: ${GOLD}; }
+[data-testid="stSidebar"] > div:first-child{ background: ${EMERALD_800}; }
+section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color: ${GOLD}; }
 
-/* Hero compact */
+/* HERO (có thanh vàng) */
 .hero{
-  position:relative;
-  padding:18px 22px 16px 22px;
-  background: linear-gradient(180deg, #107A73 0%, #0F6762 100%);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow);
-  margin: 8px 0 18px 0;
+  position:relative; padding:20px 22px 18px 22px;
+  background: linear-gradient(180deg, ${EMERALD_600} 0%, ${EMERALD_800} 100%);
+  border-radius: var(--r-xl); box-shadow: var(--shadow); margin: 8px 0 18px 0;
+  border: 1px solid var(--panel-border);
 }
 .hero:before{
   content:""; position:absolute; left:18px; right:18px; top:8px; height:6px;
   background:${GOLD}; border-radius:8px;
 }
-.hero h1{ margin:4px 0 2px 0; font-weight:800; letter-spacing:.2px; }
+.hero h1{ margin:6px 0 4px 0; color:${GOLD}; font-weight:900; letter-spacing:.3px; }
 .hero p{ margin:0; color:${TEXT_MUTED}; }
 
-/* Container width */
+/* Layout */
 .block-container{ max-width: 1100px; margin: 0 auto; padding-top: .6rem; }
 
-/* Section card */
+/* Cards (glass) */
 .card{
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow);
-  padding: 16px;
-  margin-bottom: 16px;
-  backdrop-filter: blur(6px);
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: var(--r-xl); box-shadow: var(--shadow);
+  padding: 16px; margin-bottom: 16px; backdrop-filter: blur(6px);
 }
-.card .card-title{
-  display:flex; align-items:center; gap:8px;
-  font-weight:800; margin-bottom:10px;
-}
-.badge{
-  display:inline-block; padding:4px 10px; border-radius:999px;
-  background:${EMERALD_700}; color:#fff; font-size:12px; font-weight:700;
-}
+.card .card-title{ display:flex; align-items:center; gap:10px; font-weight:800; margin-bottom:10px; color:${GOLD}; }
+.badge{ display:inline-block; padding:4px 10px; border-radius:999px; background:${EMERALD_700}; color:#fff; font-size:12px; font-weight:800; }
 
 /* Inputs */
 .stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
 .stTextArea textarea, .stNumberInput input{
-  background:#fff !important; color:#000 !important;
+  background:#fff !important; color:#000 !important; height:44px;
   border-radius:12px !important; border:1px solid #E6E6E6 !important;
-  height:44px;
 }
 
-/* Buttons: primary + subtle */
+/* Buttons (gold primary) */
 .stButton > button{
-  border:0; border-radius:12px; font-weight:800; padding:10px 16px;
-  box-shadow: 0 6px 16px rgba(0,0,0,.18);
-}
-.btn-primary > button{
-  background:${GOLD} !important; color:#000 !important;
-}
-.btn-subtle > button{
-  background: rgba(255,255,255,.10) !important; color:#fff !important;
-  box-shadow: none;
+  background: ${GOLD} !important; color:#000 !important; border:0;
+  border-radius:12px; font-weight:900; padding:10px 16px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.18); transition: transform .05s, filter .15s;
 }
 .stButton > button:hover{ filter:brightness(.97); }
 .stButton > button:active{ transform: translateY(1px); }
 
-/* Table header & table radius */
+/* Dataframe styling: header emerald, viền nhấn gold */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
-  background:${EMERALD_700} !important; color:#fff !important; font-weight:700 !important;
+  background:${EMERALD_700} !important; color:${GOLD} !important; font-weight:800 !important;
+  border-bottom: 2px solid ${GOLD} !important;
 }
-.dataframe > div{ border-radius: 10px; overflow:hidden; }
+.stDataFrame tbody td{ border-bottom: 1px solid rgba(255,255,255,.06) !important; }
+.stDataFrame{ border: 1px solid ${GOLD}22; border-radius: 12px; overflow: hidden; }
 
-/* Alerts */
-.stAlert{ border-radius: 12px; }
-.stAlert.success{ background: rgba(6,110,104,.16) !important; border-left: 4px solid ${GOLD} !important; }
-.stAlert.warning{ background: rgba(192,126,0,.16) !important;  border-left: 4px solid #C07E00 !important; }
-.stAlert.error  { background: rgba(160,0,0,.16) !important;    border-left: 4px solid #A00000 !important; }
+/* Alerts với viền vàng */
+.stAlert{ border-radius:12px; }
+.stAlert.success{ background: rgba(212,175,55,.10) !important; border-left: 4px solid ${GOLD} !important; }
+.stAlert.warning{ background: rgba(192,126,0,.12) !important; border-left: 4px solid #C07E00 !important; }
+.stAlert.error  { background: rgba(160,0,0,.12) !important;   border-left: 4px solid #A00000 !important; }
 
 /* Skeleton shimmer */
 .skel{
@@ -129,15 +104,16 @@ section[data-testid="stSidebar"] h3{ color: ${GOLD}; }
 }
 @keyframes shimmer { 0%{background-position:-280px 0} 100%{background-position:280px 0} }
 
-/* Map container */
-.pydeck_chart, .stDeckGlJsonChart{ border-radius: 12px; overflow:hidden; }
+/* Map */
+.pydeck_chart, .stDeckGlJsonChart{ border-radius: 12px; overflow:hidden; border:1px solid ${GOLD}22; }
 </style>
 """)
 
 if not st.session_state.get("css_loaded"):
     html(css_tpl.substitute(
-        EMERALD_700=EMERALD_700, EMERALD_800=EMERALD_800,
-        GOLD=GOLD, TEXT_LIGHT=TEXT_LIGHT, TEXT_MUTED=TEXT_MUTED
+        GOLD=GOLD, EMERALD_700=EMERALD_700, EMERALD_800=EMERALD_800,
+        EMERALD_900=EMERALD_900, EMERALD_600=EMERALD_600,
+        TEXT_LIGHT=TEXT_LIGHT, TEXT_MUTED=TEXT_MUTED
     ), height=0, width=0)
     st.session_state["css_loaded"] = True
 
@@ -146,7 +122,7 @@ st.markdown(
     """
     <div class="hero">
       <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
-      <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — emerald–gold UI gọn & sắc nét.</p>
+      <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — emerald–gold UI chuẩn BIDV.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -188,7 +164,7 @@ def to_clean_df(obj: Any, order_hint: list[str] | None = None) -> pd.DataFrame:
 def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude"):
     if {lat_col, lon_col}.issubset(df.columns) and df[lat_col].notna().any():
         lat = float(df[lat_col].iloc[0]); lon = float(df[lon_col].iloc[0])
-        view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10, pitch=0)
+        view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10)
         style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
         layer = pdk.Layer(
             "ScatterplotLayer",
@@ -204,18 +180,10 @@ st.caption("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
 address_input = st.text_input("Nhập địa chỉ", "70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
 
 c1, c2 = st.columns([1, 1])
-with c1:
-    parse_clicked = st.container()
-    with st.container():
-        st.markdown('<div class="btn-subtle">', unsafe_allow_html=True)
-        clicked_parse = st.button("Phân tích địa chỉ")
-        st.markdown('</div>', unsafe_allow_html=True)
-with c2:
-    st.markdown('<div class="btn-subtle">', unsafe_allow_html=True)
-    clicked_convert = st.button("Chuẩn hóa (→ 2025)")
-    st.markdown('</div>', unsafe_allow_html=True)
+parse_clicked   = c1.button("Phân tích địa chỉ")
+convert_clicked = c2.button("Chuẩn hóa (→ 2025)")
 
-if clicked_parse:
+if parse_clicked:
     try:
         st.markdown('<div class="skel"></div>', unsafe_allow_html=True)
         parsed = parse_address(address_input, mode=mode, keep_street=keep_street, level=int(level))
@@ -231,10 +199,10 @@ if clicked_parse:
         st.error(f"❌ Lỗi phân tích: {e}")
         st.info("Gợi ý: nếu bật keep_street, nên có ≥3 dấu phẩy (LEGACY) hoặc ≥2 (FROM_2025).")
 
-if clicked_convert:
+if convert_clicked:
     try:
         st.markdown('<div class="skel"></div>', unsafe_allow_html=True)
-        converted = convert_address(address_input)
+        converted = convert_address(address_input)  # default CONVERT_2025
         st.empty()
         if converted:
             st.success("🔁 Kết quả sau chuẩn hóa (→ 2025)")
@@ -256,10 +224,7 @@ else:
     st.write("**Xem nhanh dữ liệu đầu vào:**")
     st.dataframe(df_preview.head(20), use_container_width=True)
 
-    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
     run_batch = st.button("⚙️ Chạy chuẩn hóa CSV")
-    st.markdown('</div>', unsafe_allow_html=True)
-
     if run_batch and address_col:
         try:
             with st.spinner("Đang chuẩn hóa..."):

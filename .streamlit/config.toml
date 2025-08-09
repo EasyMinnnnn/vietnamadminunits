@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#066E68"          # Xanh ngọc chủ đạo
+backgroundColor = "#0C5B57"       # Nền chính đậm hơn nhẹ
+secondaryBackgroundColor = "#0E6963" # Nền box/khối
+textColor = "#FFFFFF"             # Chữ trắng
+font = "sans serif"

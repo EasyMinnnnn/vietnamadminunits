@@ -6,7 +6,6 @@ from typing import Dict, Any
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
-from streamlit.components.v1 import html
 
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column, standardize_admin_unit_columns  # noqa
@@ -24,8 +23,9 @@ EMERALD_600 = "#0F7B74"
 TEXT_LIGHT  = "#F3FBFA"
 TEXT_MUTED  = "#CEEDEA"
 
-# ---------------- CSS (inject via components.html) ----------------
-css_tpl = Template("""
+# ---------------- CSS INJECTION (NO IFRAME) ----------------
+css_tpl = Template(r"""
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg: linear-gradient(180deg, ${EMERALD_800} 0%, ${EMERALD_900} 100%);
@@ -42,7 +42,7 @@ html, body, [class*="css"]{ font-family: 'Inter', system-ui, -apple-system, Sego
 [data-testid="stSidebar"] > div:first-child{ background: ${EMERALD_800}; }
 section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color: ${GOLD}; }
 
-/* HERO (có thanh vàng gradient) */
+/* HERO (thanh vàng gradient) */
 .hero{
   position:relative; padding:22px 26px 20px 26px;
   background: linear-gradient(180deg, ${EMERALD_600} 0%, ${EMERALD_800} 100%);
@@ -60,7 +60,7 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 /* Layout */
 .block-container{ max-width: 1100px; margin: 0 auto; padding-top: .6rem; }
 
-/* Cards (glass) */
+/* Cards */
 .card{
   background: var(--panel); border: 1px solid var(--panel-border);
   border-radius: var(--r-xl); box-shadow: var(--shadow);
@@ -85,7 +85,7 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 .stButton > button:hover{ filter:brightness(.97); }
 .stButton > button:active{ transform: translateY(1px); }
 
-/* Dataframe: header emerald + nhấn vàng, khung vàng rõ */
+/* Dataframe: header emerald + nhấn vàng, khung vàng */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
   background:${EMERALD_700} !important; color:${GOLD} !important; font-weight:800 !important;
   border-bottom: 2px solid ${GOLD} !important;
@@ -93,13 +93,13 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 .stDataFrame{ border: 2px solid ${GOLD}; border-radius: 12px; overflow: hidden; }
 .stDataFrame tbody td{ border-bottom: 1px solid rgba(255,255,255,.06) !important; }
 
-/* Alerts viền vàng */
+/* Alerts */
 .stAlert{ border-radius:12px; }
 .stAlert.success{ background: rgba(212,175,55,.10) !important; border-left: 5px solid ${GOLD} !important; }
 .stAlert.warning{ background: rgba(192,126,0,.12) !important; border-left: 5px solid #C07E00 !important; }
 .stAlert.error  { background: rgba(160,0,0,.12) !important;   border-left: 5px solid #A00000 !important; }
 
-/* Skeleton shimmer */
+/* Skeleton */
 .skel{
   background: linear-gradient(90deg, rgba(255,255,255,.08) 25%, rgba(255,255,255,.16) 40%, rgba(255,255,255,.08) 65%);
   border-radius: 10px; height: 40px; animation: shimmer 1.1s infinite;
@@ -110,15 +110,15 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 .pydeck_chart, .stDeckGlJsonChart{ border-radius: 12px; overflow:hidden; border:1px solid ${GOLD}22; }
 </style>
 """)
-
-if not st.session_state.get("css_loaded"):
-    html(css_tpl.substitute(
+st.markdown(
+    css_tpl.substitute(
         GOLD=GOLD, GOLD_BRIGHT=GOLD_BRIGHT,
         EMERALD_700=EMERALD_700, EMERALD_800=EMERALD_800,
         EMERALD_900=EMERALD_900, EMERALD_600=EMERALD_600,
         TEXT_LIGHT=TEXT_LIGHT, TEXT_MUTED=TEXT_MUTED
-    ), height=0, width=0)
-    st.session_state["css_loaded"] = True
+    ),
+    unsafe_allow_html=True,
+)
 
 # ---------------- HERO ----------------
 st.markdown(

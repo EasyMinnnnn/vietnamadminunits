@@ -19,7 +19,7 @@ PRIMARY_MID  = "#0E6963"
 GOLD    = "#D7C187"
 WHITE   = "#FFFFFF"
 
-# ---------------- CSS / FONT (Template để tránh lỗi %) ----------------
+# ---------------- CSS / FONT ----------------
 css_tpl = Template(r"""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -36,16 +36,8 @@ html, body, [class*="css"] { font-family: 'Inter', system-ui, -apple-system, Seg
 }
 
 /* HERO */
-.hero{
-  position:relative; padding:30px 28px 26px 28px;
-  background: linear-gradient(180deg, #0F7B74 0%, #0E6963 100%);
-  border-bottom-left-radius:22px; border-bottom-right-radius:22px;
-  box-shadow: var(--shadow); margin-bottom:26px;
-}
-.hero:before{
-  content:""; position:absolute; left:28px; right:28px; top:10px; height:7px;
-  background: $GOLD; border-radius:9px;
-}
+.hero{ position:relative; padding:30px 28px 26px 28px; background: linear-gradient(180deg, #0F7B74 0%, #0E6963 100%); border-bottom-left-radius:22px; border-bottom-right-radius:22px; box-shadow: var(--shadow); margin-bottom:26px; }
+.hero:before{ content:""; position:absolute; left:28px; right:28px; top:10px; height:7px; background: $GOLD; border-radius:9px; }
 .hero h1{ margin:0 0 6px 0; font-weight:800; letter-spacing:.2px; }
 .hero p{ margin:0; color:#EAF7F6; opacity:.95; }
 
@@ -59,48 +51,29 @@ section[data-testid="stSidebar"] h3{
 }
 
 /* Cards (glassmorphism) */
-.card{
-  background: var(--glass);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow);
-  padding: 18px;
-  margin: 10px 0 22px 0;
-  backdrop-filter: blur(6px);
-}
+.card{ background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow); padding: 18px; margin: 10px 0 22px 0; backdrop-filter: blur(6px); }
 .card .card-title{ font-weight:800; margin-bottom:10px; }
 
 /* Inputs */
-.stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
-.stTextArea textarea, .stNumberInput input{
-  background:#fff !important; color:#000 !important;
-  border-radius:12px !important; border:1px solid #E6E6E6 !important; height:46px;
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div, .stTextArea textarea, .stNumberInput input{
+  background:#fff !important; color:#000 !important; border-radius:12px !important; border:1px solid #E6E6E6 !important; height:46px;
 }
 
 /* Buttons */
-.stButton > button{
-  background: $GOLD !important; color:#000 !important; border:0;
-  border-radius: var(--radius-lg); font-weight:800; padding:12px 18px;
-  box-shadow: 0 8px 18px rgba(0,0,0,.22); transition: transform .05s ease, filter .15s ease;
-}
+.stButton > button{ background: $GOLD !important; color:#000 !important; border:0; border-radius: var(--radius-lg); font-weight:800; padding:12px 18px; box-shadow: 0 8px 18px rgba(0,0,0,.22); transition: transform .05s ease, filter .15s ease; }
 .stButton > button:hover{ filter:brightness(.97); }
 .stButton > button:active{ transform: translateY(1px); }
 
 /* Table header */
-[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
-  background: $PRIMARY !important; color:#fff !important; font-weight:700 !important;
-}
+[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{ background: $PRIMARY !important; color:#fff !important; font-weight:700 !important; }
 
 /* Alerts */
 .stAlert.success{ background: rgba(6,110,104,.18) !important; border-left: 4px solid $GOLD !important; }
 .stAlert.warning{ background: rgba(192,126,0,.18) !important; border-left: 4px solid #C07E00 !important; }
-.stAlert.error  { background: rgba(160,0,0,.18) !important;   border-left: 4px solid #A00000 !important; }
+.stAlert.error { background: rgba(160,0,0,.18) !important; border-left: 4px solid #A00000 !important; }
 
 /* Skeleton shimmer */
-.skel{
-  background: linear-gradient(90deg, rgba(255,255,255,.08) 25%, rgba(255,255,255,.15) 37%, rgba(255,255,255,.08) 63%);
-  border-radius: 10px; height: 42px; animation: shimmer 1.2s infinite;
-}
+.skel{ background: linear-gradient(90deg, rgba(255,255,255,.08) 25%, rgba(255,255,255,.15) 37%, rgba(255,255,255,.08) 63%); border-radius: 10px; height: 42px; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { 0%{background-position:-300px 0} 100%{background-position:300px 0} }
 
 /* Bố cục */

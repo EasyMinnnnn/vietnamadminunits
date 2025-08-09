@@ -1,9 +1,10 @@
 # app.py
+import os
 import streamlit as st
 import pandas as pd
 from typing import Dict, Any
-import numpy as np
 import pydeck as pdk
+from string import Template
 
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column, standardize_admin_unit_columns
@@ -17,8 +18,8 @@ PRIMARY_MID  = "#0E6963"
 GOLD    = "#D7C187"
 WHITE   = "#FFFFFF"
 
-# ---------------- CSS / FONT ----------------
-st.markdown("""
+# ---------------- CSS / FONT (Template để tránh lỗi %) ----------------
+css_tpl = Template(r"""
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 html, body, [class*="css"]  { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
@@ -42,14 +43,14 @@ html, body, [class*="css"]  { font-family: 'Inter', system-ui, -apple-system, Se
 }
 .hero:before{
   content:""; position:absolute; left:28px; right:28px; top:10px; height:7px;
-  background: %s; border-radius:9px;
+  background: $GOLD; border-radius:9px;
 }
 .hero h1{ margin:0 0 6px 0; font-weight:800; letter-spacing:.2px; }
 .hero p{ margin:0; color:#EAF7F6; opacity:.95; }
 
 /* Sidebar */
-[data-testid="stSidebar"] > div:first-child{ background:%s; }
-section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:%s; }
+[data-testid="stSidebar"] > div:first-child{ background:$PRIMARY_MID; }
+section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:$GOLD; }
 
 /* Cards (glassmorphism) */
 .card{
@@ -65,7 +66,7 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 
 /* Buttons */
 .stButton > button{
-  background:%s !important; color:#000 !important; border:0;
+  background:$GOLD !important; color:#000 !important; border:0;
   border-radius: var(--radius-lg); font-weight:800; padding:12px 18px;
   box-shadow: 0 8px 18px rgba(0,0,0,.22); transition: transform .05s ease, filter .15s ease;
 }
@@ -79,23 +80,26 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 
 /* Table header */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
-  background:%s !important; color:#fff !important; font-weight:700 !important;
+  background:$PRIMARY !important; color:#fff !important; font-weight:700 !important;
 }
 
 /* Alerts */
-.stAlert.success{ background: rgba(6,110,104,.18) !important; border-left: 4px solid %s !important; }
+.stAlert.success{ background: rgba(6,110,104,.18) !important; border-left: 4px solid $GOLD !important; }
 .stAlert.warning{ background: rgba(192,126,0,.18) !important; border-left: 4px solid #C07E00 !important; }
 .stAlert.error  { background: rgba(160,0,0,.18) !important;   border-left: 4px solid #A00000 !important; }
 
 /* Skeleton shimmer */
 .skel{
-  background: linear-gradient(90deg, rgba(255,255,255,.08) 25%%, rgba(255,255,255,.15) 37%%, rgba(255,255,255,.08) 63%%);
+  background: linear-gradient(90deg, rgba(255,255,255,.08) 25%, rgba(255,255,255,.15) 37%, rgba(255,255,255,.08) 63%);
   border-radius: 10px; height: 42px; animation: shimmer 1.2s infinite;
 }
-@keyframes shimmer { 0%%{background-position:-300px 0} 100%%{background-position:300px 0} }
+@keyframes shimmer { 0%{background-position:-300px 0} 100%{background-position:300px 0} }
 .block-container{ padding-top: .6rem; }
 </style>
-""" % (GOLD, PRIMARY_MID, GOLD, GOLD, PRIMARY, GOLD), unsafe_allow_html=True)
+""")
+st.markdown(css_tpl.substitute(
+    GOLD=GOLD, PRIMARY_MID=PRIMARY_MID, PRIMARY=PRIMARY
+), unsafe_allow_html=True)
 
 # ---------------- HERO ----------------
 st.markdown(
@@ -140,14 +144,15 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude"):
     if {lat_col, lon_col}.issubset(df.columns) and df[lat_col].notna().any():
         lat = float(df[lat_col].iloc[0]); lon = float(df[lon_col].iloc[0])
         view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10, pitch=0)
+        # nếu không có MAPBOX_API_KEY thì dùng style mặc định (khỏi lỗi)
+        map_style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
         layer = pdk.Layer(
             "ScatterplotLayer",
             data=df.rename(columns={lat_col:"lat", lon_col:"lon"}),
             get_position="[lon, lat]",
             get_radius=200, pickable=True, opacity=0.9,
         )
-        r = pdk.Deck(layers=[layer], initial_view_state=view,
-                     map_style="mapbox://styles/mapbox/dark-v11")
+        r = pdk.Deck(layers=[layer], initial_view_state=view, map_style=map_style)
         st.pydeck_chart(r, use_container_width=True)
 
 # ---------------- SINGLE ADDRESS ----------------
@@ -161,7 +166,6 @@ convert_clicked = c2.button("🔁 Chuẩn hóa (→ 2025)")
 
 if parse_clicked:
     try:
-        # skeleton
         st.markdown('<div class="skel"></div>', unsafe_allow_html=True)
         parsed = parse_address(address_input, mode=mode, keep_street=keep_street, level=int(level))
         st.empty()

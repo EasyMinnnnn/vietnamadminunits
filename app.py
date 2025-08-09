@@ -1,6 +1,5 @@
 # app.py
 import os
-from string import Template
 from typing import Dict, Any
 
 import pandas as pd
@@ -13,49 +12,27 @@ from vietnamadminunits.pandas import convert_address_column, standardize_admin_u
 # ---------------- BASIC SETUP ----------------
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# Brand palette (BIDV-like)
-GOLD        = "#D4AF37"   # gold
-GOLD_BRIGHT = "#FFD700"   # gold highlight
-EMERALD_900 = "#0B4F4B"
-EMERALD_800 = "#0E6963"
-EMERALD_700 = "#066E68"
-EMERALD_600 = "#0F7B74"
-TEXT_LIGHT  = "#F3FBFA"
-TEXT_MUTED  = "#CEEDEA"
-
-# ---------------- CSS INJECTION (NO IFRAME) ----------------
-css_tpl = Template(r"""
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+# ---------------- CSS (your snippet, injected globally) ----------------
+CSS = """
 <style>
-:root{
-  --bg: linear-gradient(180deg, ${EMERALD_800} 0%, ${EMERALD_900} 100%);
-  --panel: rgba(255,255,255,.045);
-  --panel-border: rgba(255,255,255,.08);
-  --shadow: 0 12px 32px rgba(0,0,0,.28);
-  --r-lg: 14px; --r-xl: 18px;
-}
-
-html, body, [class*="css"]{ font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-.stApp{ background: var(--bg); color: ${TEXT_LIGHT}; }
-
 /* Sidebar */
-[data-testid="stSidebar"] > div:first-child{ background: ${EMERALD_800}; }
-section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color: ${GOLD}; }
+[data-testid="stSidebar"] > div:first-child section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3{ color: #D4AF37; }
 
 /* HERO (thanh vàng gradient) */
 .hero{
   position:relative; padding:22px 26px 20px 26px;
-  background: linear-gradient(180deg, ${EMERALD_600} 0%, ${EMERALD_800} 100%);
+  background: linear-gradient(180deg, #0F7B74 0%, #0E6963 100%);
   border-radius: var(--r-xl); box-shadow: var(--shadow); margin: 10px 0 18px 0;
   border: 1px solid var(--panel-border);
 }
 .hero:before{
   content:""; position:absolute; left:20px; right:20px; top:8px; height:8px;
-  background: linear-gradient(90deg, ${GOLD} 0%, ${GOLD_BRIGHT} 100%);
+  background: linear-gradient(90deg, #D4AF37 0%, #FFD700 100%);
   border-radius:10px;
 }
-.hero h1{ margin:8px 0 6px 0; color:${GOLD}; font-weight:900; letter-spacing:.3px; }
-.hero p{ margin:0; color:${TEXT_MUTED}; }
+.hero h1{ margin:8px 0 6px 0; color:#D4AF37; font-weight:900; letter-spacing:.3px; }
+.hero p{ margin:0; color:#CEEDEA; }
 
 /* Layout */
 .block-container{ max-width: 1100px; margin: 0 auto; padding-top: .6rem; }
@@ -66,8 +43,14 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
   border-radius: var(--r-xl); box-shadow: var(--shadow);
   padding: 16px; margin-bottom: 16px; backdrop-filter: blur(6px);
 }
-.card .card-title{ display:flex; align-items:center; gap:10px; font-weight:800; margin-bottom:10px; color:${GOLD}; }
-.badge{ display:inline-block; padding:4px 10px; border-radius:999px; background:${EMERALD_700}; color:#fff; font-size:12px; font-weight:800; }
+.card .card-title{
+  display:flex; align-items:center; gap:10px; font-weight:800;
+  margin-bottom:10px; color:#D4AF37;
+}
+.badge{
+  display:inline-block; padding:4px 10px; border-radius:999px;
+  background:#066E68; color:#fff; font-size:12px; font-weight:800;
+}
 
 /* Inputs */
 .stTextInput input, .stSelectbox div[data-baseweb="select"] > div,
@@ -78,7 +61,7 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 
 /* Buttons (gold gradient) */
 .stButton > button{
-  background: linear-gradient(90deg, ${GOLD} 0%, ${GOLD_BRIGHT} 100%) !important;
+  background: linear-gradient(90deg, #D4AF37 0%, #FFD700 100%) !important;
   color:#000 !important; border:0; border-radius:12px; font-weight:900; padding:10px 18px;
   box-shadow: 0 6px 16px rgba(0,0,0,.18); transition: transform .05s, filter .15s;
 }
@@ -87,17 +70,17 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 
 /* Dataframe: header emerald + nhấn vàng, khung vàng */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
-  background:${EMERALD_700} !important; color:${GOLD} !important; font-weight:800 !important;
-  border-bottom: 2px solid ${GOLD} !important;
+  background:#066E68 !important; color:#D4AF37 !important; font-weight:800 !important;
+  border-bottom: 2px solid #D4AF37 !important;
 }
-.stDataFrame{ border: 2px solid ${GOLD}; border-radius: 12px; overflow: hidden; }
+.stDataFrame{ border: 2px solid #D4AF37; border-radius: 12px; overflow: hidden; }
 .stDataFrame tbody td{ border-bottom: 1px solid rgba(255,255,255,.06) !important; }
 
 /* Alerts */
 .stAlert{ border-radius:12px; }
-.stAlert.success{ background: rgba(212,175,55,.10) !important; border-left: 5px solid ${GOLD} !important; }
+.stAlert.success{ background: rgba(212,175,55,.10) !important; border-left: 5px solid #D4AF37 !important; }
 .stAlert.warning{ background: rgba(192,126,0,.12) !important; border-left: 5px solid #C07E00 !important; }
-.stAlert.error  { background: rgba(160,0,0,.12) !important;   border-left: 5px solid #A00000 !important; }
+.stAlert.error  { background: rgba(160,0,0,.12) !important; border-left: 5px solid #A00000 !important; }
 
 /* Skeleton */
 .skel{
@@ -107,25 +90,24 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 @keyframes shimmer { 0%{background-position:-280px 0} 100%{background-position:280px 0} }
 
 /* Map */
-.pydeck_chart, .stDeckGlJsonChart{ border-radius: 12px; overflow:hidden; border:1px solid ${GOLD}22; }
+.pydeck_chart, .stDeckGlJsonChart{ border-radius: 12px; overflow:hidden; border:1px solid #D4AF3722; }
 </style>
-""")
-st.markdown(
-    css_tpl.substitute(
-        GOLD=GOLD, GOLD_BRIGHT=GOLD_BRIGHT,
-        EMERALD_700=EMERALD_700, EMERALD_800=EMERALD_800,
-        EMERALD_900=EMERALD_900, EMERALD_600=EMERALD_600,
-        TEXT_LIGHT=TEXT_LIGHT, TEXT_MUTED=TEXT_MUTED
-    ),
-    unsafe_allow_html=True,
+"""
+# NOTE: selector ở dòng Sidebar của bạn thiếu dấu phẩy giữa 2 phần → dễ không “ăn”.
+# Nếu muốn chắc ăn, thêm (không bắt buộc):
+# <style>
+# [data-testid="stSidebar"] > div:first-child { background: #0E6963; }
+# section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3 { color:#D4AF37; }
+# </style>
 )
+st.markdown(CSS, unsafe_allow_html=True)
 
 # ---------------- HERO ----------------
 st.markdown(
     """
     <div class="hero">
       <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
-      <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — emerald–gold UI chuẩn BIDV.</p>
+      <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — emerald–gold.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -152,13 +134,18 @@ if uploaded is not None:
 
 # ---------------- HELPERS ----------------
 def to_clean_df(obj: Any, order_hint: list[str] | None = None) -> pd.DataFrame:
-    if obj is None: return pd.DataFrame()
-    data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items()
-                            if not k.startswith("_") and v is not None}
-    default_order = ["province","district","ward","street",
-                     "short_province","short_district","short_ward",
-                     "province_type","district_type","ward_type",
-                     "latitude","longitude"]
+    if obj is None:
+        return pd.DataFrame()
+    data: Dict[str, Any] = {
+        k: v for k, v in getattr(obj, "__dict__", {}).items()
+        if not k.startswith("_") and v is not None
+    }
+    default_order = [
+        "province", "district", "ward", "street",
+        "short_province", "short_district", "short_ward",
+        "province_type", "district_type", "ward_type",
+        "latitude", "longitude",
+    ]
     if order_hint:
         default_order = order_hint + [c for c in default_order if c not in order_hint]
     ordered = [c for c in default_order if c in data] + [c for c in data if c not in default_order]

@@ -15,13 +15,14 @@ from vietnamadminunits.pandas import convert_address_column, standardize_admin_u
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
 # Brand palette (BIDV-like)
-GOLD          = "#D4AF37"  # gold đậm kiểu BIDV
-EMERALD_900   = "#0B4F4B"
-EMERALD_800   = "#0E6963"
-EMERALD_700   = "#066E68"
-EMERALD_600   = "#0F7B74"
-TEXT_LIGHT    = "#F3FBFA"
-TEXT_MUTED    = "#CEEDEA"
+GOLD        = "#D4AF37"   # gold
+GOLD_BRIGHT = "#FFD700"   # gold highlight
+EMERALD_900 = "#0B4F4B"
+EMERALD_800 = "#0E6963"
+EMERALD_700 = "#066E68"
+EMERALD_600 = "#0F7B74"
+TEXT_LIGHT  = "#F3FBFA"
+TEXT_MUTED  = "#CEEDEA"
 
 # ---------------- CSS (inject via components.html) ----------------
 css_tpl = Template("""
@@ -41,18 +42,19 @@ html, body, [class*="css"]{ font-family: 'Inter', system-ui, -apple-system, Sego
 [data-testid="stSidebar"] > div:first-child{ background: ${EMERALD_800}; }
 section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color: ${GOLD}; }
 
-/* HERO (có thanh vàng) */
+/* HERO (có thanh vàng gradient) */
 .hero{
-  position:relative; padding:20px 22px 18px 22px;
+  position:relative; padding:22px 26px 20px 26px;
   background: linear-gradient(180deg, ${EMERALD_600} 0%, ${EMERALD_800} 100%);
-  border-radius: var(--r-xl); box-shadow: var(--shadow); margin: 8px 0 18px 0;
+  border-radius: var(--r-xl); box-shadow: var(--shadow); margin: 10px 0 18px 0;
   border: 1px solid var(--panel-border);
 }
 .hero:before{
-  content:""; position:absolute; left:18px; right:18px; top:8px; height:6px;
-  background:${GOLD}; border-radius:8px;
+  content:""; position:absolute; left:20px; right:20px; top:8px; height:8px;
+  background: linear-gradient(90deg, ${GOLD} 0%, ${GOLD_BRIGHT} 100%);
+  border-radius:10px;
 }
-.hero h1{ margin:6px 0 4px 0; color:${GOLD}; font-weight:900; letter-spacing:.3px; }
+.hero h1{ margin:8px 0 6px 0; color:${GOLD}; font-weight:900; letter-spacing:.3px; }
 .hero p{ margin:0; color:${TEXT_MUTED}; }
 
 /* Layout */
@@ -74,28 +76,28 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
   border-radius:12px !important; border:1px solid #E6E6E6 !important;
 }
 
-/* Buttons (gold primary) */
+/* Buttons (gold gradient) */
 .stButton > button{
-  background: ${GOLD} !important; color:#000 !important; border:0;
-  border-radius:12px; font-weight:900; padding:10px 16px;
+  background: linear-gradient(90deg, ${GOLD} 0%, ${GOLD_BRIGHT} 100%) !important;
+  color:#000 !important; border:0; border-radius:12px; font-weight:900; padding:10px 18px;
   box-shadow: 0 6px 16px rgba(0,0,0,.18); transition: transform .05s, filter .15s;
 }
 .stButton > button:hover{ filter:brightness(.97); }
 .stButton > button:active{ transform: translateY(1px); }
 
-/* Dataframe styling: header emerald, viền nhấn gold */
+/* Dataframe: header emerald + nhấn vàng, khung vàng rõ */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
   background:${EMERALD_700} !important; color:${GOLD} !important; font-weight:800 !important;
   border-bottom: 2px solid ${GOLD} !important;
 }
+.stDataFrame{ border: 2px solid ${GOLD}; border-radius: 12px; overflow: hidden; }
 .stDataFrame tbody td{ border-bottom: 1px solid rgba(255,255,255,.06) !important; }
-.stDataFrame{ border: 1px solid ${GOLD}22; border-radius: 12px; overflow: hidden; }
 
-/* Alerts với viền vàng */
+/* Alerts viền vàng */
 .stAlert{ border-radius:12px; }
-.stAlert.success{ background: rgba(212,175,55,.10) !important; border-left: 4px solid ${GOLD} !important; }
-.stAlert.warning{ background: rgba(192,126,0,.12) !important; border-left: 4px solid #C07E00 !important; }
-.stAlert.error  { background: rgba(160,0,0,.12) !important;   border-left: 4px solid #A00000 !important; }
+.stAlert.success{ background: rgba(212,175,55,.10) !important; border-left: 5px solid ${GOLD} !important; }
+.stAlert.warning{ background: rgba(192,126,0,.12) !important; border-left: 5px solid #C07E00 !important; }
+.stAlert.error  { background: rgba(160,0,0,.12) !important;   border-left: 5px solid #A00000 !important; }
 
 /* Skeleton shimmer */
 .skel{
@@ -111,7 +113,8 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 
 if not st.session_state.get("css_loaded"):
     html(css_tpl.substitute(
-        GOLD=GOLD, EMERALD_700=EMERALD_700, EMERALD_800=EMERALD_800,
+        GOLD=GOLD, GOLD_BRIGHT=GOLD_BRIGHT,
+        EMERALD_700=EMERALD_700, EMERALD_800=EMERALD_800,
         EMERALD_900=EMERALD_900, EMERALD_600=EMERALD_600,
         TEXT_LIGHT=TEXT_LIGHT, TEXT_MUTED=TEXT_MUTED
     ), height=0, width=0)

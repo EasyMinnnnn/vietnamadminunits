@@ -252,4 +252,4 @@ else:
         except Exception as e:
             st.error(f"❌ Lỗi batch: {e}")
             st.info("Kiểm tra encoding UTF-8 và cột địa chỉ được chọn đúng.")
-st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True

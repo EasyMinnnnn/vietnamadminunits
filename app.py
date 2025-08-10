@@ -10,7 +10,7 @@ import streamlit as st
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
 
-# ===== NEW: Geocoder (OSM + ranh xã)
+# ===== Geocoder (OSM + ranh xã)
 from geocode_tool import Geocoder
 
 # ================== PAGE ==================
@@ -144,19 +144,19 @@ CSV_PATH = "data/interim/legacy_63-province-10040-ward_with_location_and_key.csv
 @st.cache_resource(show_spinner=False)
 def load_gc():
     path = CSV_PATH
-    kwargs = dict(email=os.getenv("NOMINATIM_EMAIL"), accept_language="vi")
+    # Gọi Geocoder chỉ với path — không truyền email/accept_language
     try:
-        return Geocoder(csv_path_or_url=path, **kwargs)
+        return Geocoder(csv_path_or_url=path)
     except TypeError:
         try:
-            return Geocoder(csv_path=path, **kwargs)
+            return Geocoder(csv_path=path)
         except TypeError:
-            return Geocoder(path, **kwargs)
+            return Geocoder(path)
 
 try:
     gc = load_gc()
 except Exception as e:
-    st.error("Không khởi tạo được Geocoder. Kiểm tra file CSV & logs.")
+    st.error("Không khởi tạo được Geocoder. Kiểm tra đường dẫn CSV & nội dung file.")
     st.exception(e)
     st.stop()
 
@@ -201,7 +201,7 @@ if convert_clicked:
     except Exception as e:
         st.error(f"⚠️ Lỗi khi chuẩn hóa: {e}")
 
-# ===== NEW: Reverse geocode (đặt trong expander nhỏ, không đổi bố cục)
+# ===== Reverse geocode (đặt trong expander nhỏ, không đổi bố cục)
 with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
     c3, c4, c5 = st.columns([1,1,.6])
     with c3:
@@ -248,7 +248,7 @@ else:
     run_batch = st.button("⚙️ Chạy chuẩn hóa CSV")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # NEW: nút reverse geocode CSV nếu có cột lat/lon (không phân biệt hoa/thường)
+    # Nút reverse geocode CSV nếu có cột lat/lon (không phân biệt hoa/thường)
     cols_lower = {c.lower(): c for c in df_preview.columns}
     has_latlon = ("latitude" in cols_lower and "longitude" in cols_lower)
     if has_latlon:

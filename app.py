@@ -12,10 +12,10 @@ from vietnamadminunits.pandas import convert_address_column
 # ================== PAGE ==================
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ================== CSS (inject once, hidden) ==================
-CSS = """
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-<style>
+# ================== CSS (inject ONCE, hidden) ==================
+CSS = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
 :root{
   --gold:#D4AF37; --gold-hi:#FFD700;
   --emerald-900:#083D3B; --emerald-800:#0A4D4A; --emerald-700:#0E6963; --emerald:#066E68;
@@ -85,9 +85,7 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
 
 /* Micro spacing */
 h2, h3{ letter-spacing:.1px; }
-</style>
-"""
-# inject once, no printing
+</style>"""
 st.markdown(CSS, unsafe_allow_html=True)
 
 # ================== HERO ==================

@@ -96,7 +96,6 @@ st.markdown(CSS, unsafe_allow_html=True)
 st.markdown("""
 <div class="hero">
   <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
-  <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — emerald–gold, hiện đại & chuyên nghiệp.</p>
 </div>
 """, unsafe_allow_html=True)
 

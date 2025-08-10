@@ -10,7 +10,7 @@ import streamlit as st
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
 
-# ✨ NEW: import geocode_tool
+# ===== NEW: Geocoder (OSM + ranh xã)
 from geocode_tool import Geocoder
 
 # ================== PAGE ==================
@@ -19,6 +19,7 @@ st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wi
 # ================== CSS (inject ONCE, hidden) ==================
 CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+
 :root{
   --gold:#D4AF37; --gold-hi:#FFD700;
   --emerald-900:#083D3B; --emerald-800:#0A4D4A; --emerald-700:#0E6963; --emerald:#066E68;
@@ -29,39 +30,64 @@ CSS = """<style>
 html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
 .stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%); color:#F3FBFA; }
 .block-container{ max-width:1180px; padding-top:.75rem; }
+
+/* Sidebar */
 [data-testid="stSidebar"] > div:first-child{ background:var(--emerald-700); }
 section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
+
+/* Hero */
 .hero{
   position:relative; padding:22px 26px; border-radius:var(--r-xl);
   background:linear-gradient(135deg, #0F7B74 0%, var(--emerald-700) 55%, var(--emerald-800) 100%);
   border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px; overflow:hidden;
 }
-.hero:before{ content:""; position:absolute; inset:0;
-  background: linear-gradient(120deg, transparent 0 60%, rgba(255,255,255,.05) 62%, transparent 64%); pointer-events:none; }
-.hero:after{ content:""; position:absolute; left:22px; right:22px; top:10px; height:8px;
-  background:linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius:10px; }
+.hero:before{
+  content:""; position:absolute; inset:0;
+  background: linear-gradient(120deg, transparent 0 60%, rgba(255,255,255,.05) 62%, transparent 64%);
+  pointer-events:none;
+}
+.hero:after{
+  content:""; position:absolute; left:22px; right:22px; top:10px; height:8px;
+  background:linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius:10px;
+}
 .hero h1{ margin:.55rem 0 .3rem; font-weight:900; letter-spacing:.2px; color:var(--gold); }
 .hero p{ margin:0; color:#CFE7E5; }
+
+/* Cards */
 .card{ background:var(--panel); border:1px solid var(--panel-bd); border-radius:var(--r-lg);
        box-shadow:var(--shadow); padding:14px 16px; margin-bottom:14px; backdrop-filter:blur(6px); }
 .card .card-title{ display:flex; gap:10px; align-items:center; font-weight:800; color:var(--gold); margin-bottom:8px; }
 .badge{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:999px; background:var(--emerald); }
+
+/* Inputs */
 .stTextInput input, .stSelectbox div[data-baseweb="select"]>div, .stTextArea textarea, .stNumberInput input{
   background:#fff !important; color:#111 !important; height:44px; border-radius:12px !important; border:1px solid #E5E7EB !important;
 }
-.stButton > button{ border:0; border-radius:12px; padding:10px 16px; font-weight:800;
-  box-shadow:0 6px 16px rgba(0,0,0,.18); transition:transform .05s, filter .15s; }
+
+/* Buttons */
+.stButton > button{
+  border:0; border-radius:12px; padding:10px 16px; font-weight:800;
+  box-shadow:0 6px 16px rgba(0,0,0,.18); transition:transform .05s, filter .15s;
+}
 .btn-primary > button{ background:linear-gradient(90deg, var(--gold), var(--gold-hi)) !important; color:#111 !important; }
 .btn-ghost   > button{ background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none; }
 .stButton > button:hover{ filter:brightness(.97); } .stButton > button:active{ transform:translateY(1px); }
+
+/* Table */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
   background:var(--emerald) !important; color:var(--gold) !important; font-weight:800 !important; border-bottom:2px solid var(--gold) !important;
 }
 .stDataFrame{ border:1.6px solid color-mix(in srgb, var(--gold) 58%, transparent); border-radius:12px; overflow:hidden; }
 .stDataFrame tbody td{ border-bottom:1px solid rgba(255,255,255,.08) !important; }
+
+/* Alerts */
 .stAlert{ border-radius:12px; }
 .stAlert.success{ background:rgba(212,175,55,.10) !important; border-left:5px solid var(--gold) !important; }
+
+/* Map frame */
 .pydeck_chart, .stDeckGlJsonChart{ border-radius:12px; overflow:hidden; border:1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
+
+/* Micro spacing */
 h2, h3{ letter-spacing:.1px; }
 </style>"""
 st.markdown(CSS, unsafe_allow_html=True)
@@ -105,18 +131,34 @@ def render_map(df: pd.DataFrame):
         lat = float(df["latitude"].iloc[0]); lon = float(df["longitude"].iloc[0])
         view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10)
         style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
-        layer = pdk.Layer("ScatterplotLayer",
-                          data=df.rename(columns={"latitude":"lat","longitude":"lon"}),
-                          get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9)
+        layer = pdk.Layer(
+            "ScatterplotLayer",
+            data=df.rename(columns={"latitude":"lat","longitude":"lon"}),
+            get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9
+        )
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style), use_container_width=True)
 
-# ✨ NEW: load Geocoder (cache)
+# ================== GEOCODER LOADER (cache) ==================
 CSV_PATH = "data/interim/legacy_63-province-10040-ward_with_location_and_key.csv"
+
 @st.cache_resource(show_spinner=False)
 def load_gc():
-    return Geocoder(csv_path_or_url=CSV_PATH, email=os.getenv("NOMINATIM_EMAIL"), accept_language="vi")
+    path = CSV_PATH
+    kwargs = dict(email=os.getenv("NOMINATIM_EMAIL"), accept_language="vi")
+    try:
+        return Geocoder(csv_path_or_url=path, **kwargs)
+    except TypeError:
+        try:
+            return Geocoder(csv_path=path, **kwargs)
+        except TypeError:
+            return Geocoder(path, **kwargs)
 
-gc = load_gc()
+try:
+    gc = load_gc()
+except Exception as e:
+    st.error("Không khởi tạo được Geocoder. Kiểm tra file CSV & logs.")
+    st.exception(e)
+    st.stop()
 
 # ================== SINGLE ADDRESS ==================
 st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
@@ -159,7 +201,7 @@ if convert_clicked:
     except Exception as e:
         st.error(f"⚠️ Lỗi khi chuẩn hóa: {e}")
 
-# ✨ NEW: reverse geocode (giữ nguyên layout — đặt trong expander nhỏ)
+# ===== NEW: Reverse geocode (đặt trong expander nhỏ, không đổi bố cục)
 with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
     c3, c4, c5 = st.columns([1,1,.6])
     with c3:
@@ -176,7 +218,6 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
             res = gc.geocode(float(lat_in), float(lon_in))
             if res:
                 st.success("✅ Đã xác định địa chỉ")
-                # hiển thị kết quả gọn gàng
                 show = {
                     "house_number": res.get("house_number"),
                     "road": res.get("road"),
@@ -193,7 +234,7 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
         except Exception as e:
             st.error(f"❌ Lỗi reverse: {e}")
 
-st.markdown('</div>', unsafe_allow_html=True)  # đóng card
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ================== BATCH CSV ==================
 st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt (CSV)</div>', unsafe_allow_html=True)
@@ -207,8 +248,9 @@ else:
     run_batch = st.button("⚙️ Chạy chuẩn hóa CSV")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ✨ NEW: nút reverse geocode CSV nếu có cột lat/lon
-    has_latlon = {"latitude", "longitude"}.issubset({c.strip().lower() for c in df_preview.columns})
+    # NEW: nút reverse geocode CSV nếu có cột lat/lon (không phân biệt hoa/thường)
+    cols_lower = {c.lower(): c for c in df_preview.columns}
+    has_latlon = ("latitude" in cols_lower and "longitude" in cols_lower)
     if has_latlon:
         st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
         run_rev = st.button("🧭 Reverse geocode CSV (lat, lon)")
@@ -231,20 +273,29 @@ else:
                 )
             st.success("✅ Xong!")
             st.dataframe(df_out.head(50), use_container_width=True)
-            st.download_button("⬇️ Tải kết quả (CSV)",
-                               df_out.to_csv(index=False).encode("utf-8"),
-                               "converted_addresses.csv",
-                               "text/csv")
+            st.download_button(
+                "⬇️ Tải kết quả (CSV)",
+                df_out.to_csv(index=False).encode("utf-8"),
+                "converted_addresses.csv",
+                "text/csv",
+            )
         except Exception as e:
             st.error(f"❌ Lỗi batch: {e}")
 
     if run_rev:
         try:
             with st.spinner("Đang reverse geocode (tối đa ~1 req/giây)…"):
+                lat_col = cols_lower["latitude"]
+                lon_col = cols_lower["longitude"]
                 rows = []
                 for _, r in df_preview.iterrows():
-                    lat = float(r[[c for c in r.index if c.lower()=="latitude"][0]])
-                    lon = float(r[[c for c in r.index if c.lower()=="longitude"][0]])
+                    try:
+                        lat = float(r[lat_col])
+                        lon = float(r[lon_col])
+                    except Exception:
+                        rows.append({**r.to_dict(), "formatted": "", "ward": "", "province": "", "road": "", "house_number": ""})
+                        continue
+
                     res = gc.geocode(lat, lon) or {}
                     rows.append({
                         **r.to_dict(),
@@ -258,10 +309,12 @@ else:
                 df_rev = pd.DataFrame(rows)
             st.success("✅ Xong!")
             st.dataframe(df_rev.head(50), use_container_width=True)
-            st.download_button("⬇️ Tải kết quả Reverse (CSV)",
-                               df_rev.to_csv(index=False).encode("utf-8"),
-                               "reverse_geocoded.csv",
-                               "text/csv")
+            st.download_button(
+                "⬇️ Tải kết quả Reverse (CSV)",
+                df_rev.to_csv(index=False).encode("utf-8"),
+                "reverse_geocoded.csv",
+                "text/csv",
+            )
         except Exception as e:
             st.error(f"❌ Lỗi reverse batch: {e}")
 

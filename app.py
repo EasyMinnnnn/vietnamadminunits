@@ -9,10 +9,10 @@ import streamlit as st
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
 
-# ---------- Page ----------
+# ---------------- Page ----------------
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ---------- CSS: modern emerald–gold (no logos) ----------
+# ---------------- CSS (inject once, hidden) ----------------
 CSS = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -24,7 +24,7 @@ CSS = """
   --r:14px; --r-lg:18px; --r-xl:22px;
 }
 html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-.stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%) ; color:#F3FBFA; }
+.stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%); color:#F3FBFA; }
 .block-container{ max-width:1180px; padding-top:.75rem; }
 
 /* Sidebar */
@@ -89,7 +89,7 @@ h2, h3{ letter-spacing:.1px; }
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# ---------- HERO ----------
+# ---------------- HERO ----------------
 st.markdown("""
 <div class="hero">
   <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
@@ -97,13 +97,13 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------- Sidebar ----------
+# ---------------- Sidebar ----------------
 st.sidebar.header("⚙️ Tùy chọn")
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
 mode = ParseMode[mode_str]
 keep_street = st.sidebar.checkbox("Giữ tên đường", True)
 short_name = st.sidebar.checkbox("Tên rút gọn", True)
-level = st.sidebar.number_input("Level", 1, 3 if mode_str=="LEGACY" else 2, 3 if mode_str=="LEGACY" else 2, step=1)
+level = st.sidebar.number_input("Level", 1, 3 if mode_str == "LEGACY" else 2, 3 if mode_str == "LEGACY" else 2, step=1)
 st.sidebar.markdown("---")
 st.sidebar.subheader("Batch CSV")
 uploaded = st.sidebar.file_uploader("Tải CSV (UTF-8)", type=["csv"])
@@ -112,10 +112,14 @@ if uploaded is not None:
     df_preview = pd.read_csv(uploaded)
     address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
 
-# ---------- Helpers ----------
+# ---------------- Helpers ----------------
 def to_clean_df(obj: Any) -> pd.DataFrame:
-    if obj is None: return pd.DataFrame()
-    data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items() if not k.startswith("_") and v is not None}
+    if obj is None:
+        return pd.DataFrame()
+    data: Dict[str, Any] = {
+        k: v for k, v in getattr(obj, "__dict__", {}).items()
+        if not k.startswith("_") and v is not None
+    }
     order = ["province","district","ward","street","short_province","short_district","short_ward",
              "province_type","district_type","ward_type","latitude","longitude"]
     cols = [c for c in order if c in data] + [c for c in data if c not in order]
@@ -131,7 +135,7 @@ def render_map(df: pd.DataFrame):
                           get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9)
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style), use_container_width=True)
 
-# ---------- Single address ----------
+# ---------------- Single address ----------------
 st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
 st.caption("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
 address_input = st.text_input("Nhập địa chỉ", "70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
@@ -174,7 +178,7 @@ if convert_clicked:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------- Batch CSV ----------
+# ---------------- Batch CSV ----------------
 st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt (CSV)</div>', unsafe_allow_html=True)
 if uploaded is None:
     st.caption("Tải file CSV ở sidebar để bắt đầu.")
@@ -201,9 +205,12 @@ else:
                 )
             st.success("✅ Xong!")
             st.dataframe(df_out.head(50), use_container_width=True)
-            st.download_button("⬇️ Tải kết quả (CSV)",
-                               df_out.to_csv(index=False).encode("utf-8"),
-                               "converted_addresses.csv", "text/csv")
+            st.download_button(
+                "⬇️ Tải kết quả (CSV)",
+                df_out.to_csv(index=False).encode("utf-8"),
+                "converted_addresses.csv",
+                "text/csv",
+            )
         except Exception as e:
             st.error(f"❌ Lỗi batch: {e}")
 st.markdown('</div>', unsafe_allow_html=True)

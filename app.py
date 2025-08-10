@@ -9,20 +9,16 @@ import streamlit as st
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
 
-# ============ PAGE ============
+# ---------- Page ----------
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ---------- Branding (tuỳ chọn thay bằng URL/logo của bạn) ----------
-LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/BIDV_logo.svg/2560px-BIDV_logo.svg.png"  # fallback
-PREMIER_LOCKUP = "https://i.imgur.com/1s3z0sI.png"  # nếu có logo Premier riêng, thay URL này
-
-# ============ CSS ============
+# ---------- CSS: modern emerald–gold (no logos) ----------
 CSS = """
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
   --gold:#D4AF37; --gold-hi:#FFD700;
-  --emerald-900:#0A3F3D; --emerald-800:#0B4F4B; --emerald-700:#0E6963; --emerald:#066E68;
+  --emerald-900:#083D3B; --emerald-800:#0A4D4A; --emerald-700:#0E6963; --emerald:#066E68;
   --panel:rgba(255,255,255,.045); --panel-bd:rgba(255,255,255,.09);
   --shadow:0 14px 36px rgba(0,0,0,.26);
   --r:14px; --r-lg:18px; --r-xl:22px;
@@ -31,22 +27,15 @@ html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,R
 .stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%) ; color:#F3FBFA; }
 .block-container{ max-width:1180px; padding-top:.75rem; }
 
-/* Topbar */
-.topbar{
-  display:flex; align-items:center; justify-content:space-between;
-  background:linear-gradient(180deg, #0E6963 0%, #0B4F4B 100%);
-  border:1px solid var(--panel-bd); border-radius:14px; padding:8px 14px; box-shadow:var(--shadow); margin-bottom:14px;
-}
-.topbar .brand{display:flex; align-items:center; gap:10px;}
-.topbar img{ height:26px; object-fit:contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.25)); }
-.topbar .tag{ color:var(--gold); font-weight:800; letter-spacing:.2px; font-size:.92rem; opacity:.95; }
+/* Sidebar */
+[data-testid="stSidebar"] > div:first-child{ background:var(--emerald-700); }
+section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
 
-/* Hero — Premier look (diagonal overlay + gold bar) */
+/* Hero */
 .hero{
   position:relative; padding:22px 26px; border-radius:var(--r-xl);
-  background:linear-gradient(135deg, #0F7B74 0%, #0E6963 55%, #0B4F4B 100%);
-  border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px;
-  overflow:hidden;
+  background:linear-gradient(135deg, #0F7B74 0%, var(--emerald-700) 55%, var(--emerald-800) 100%);
+  border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px; overflow:hidden;
 }
 .hero:before{
   content:""; position:absolute; inset:0;
@@ -91,44 +80,24 @@ html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,R
 .stAlert{ border-radius:12px; }
 .stAlert.success{ background:rgba(212,175,55,.10) !important; border-left:5px solid var(--gold) !important; }
 
-/* Sidebar */
-[data-testid="stSidebar"] > div:first-child{ background:#0E6963; }
-section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
-
 /* Map frame */
 .pydeck_chart, .stDeckGlJsonChart{ border-radius:12px; overflow:hidden; border:1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
 
-/* Footer bar */
-.footer{
-  display:flex; align-items:center; gap:12px;
-  background:#0E6963; border:1px solid var(--panel-bd); border-radius:14px;
-  padding:8px 12px; margin-top:18px; color:var(--gold);
-}
-.footer img{ height:18px; object-fit:contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.25)); }
+/* Micro spacing */
+h2, h3{ letter-spacing:.1px; }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# ============ TOPBAR ============
-st.markdown(f"""
-<div class="topbar">
-  <div class="brand">
-    <img src="{PREMIER_LOCKUP}" onerror="this.src='{LOGO_URL}'" alt="BIDV Premier"/>
-    <span class="tag">Premier</span>
-  </div>
-  <div class="tag">Emerald–Gold UI</div>
-</div>
-""", unsafe_allow_html=True)
-
-# ============ HERO ============
+# ---------- HERO ----------
 st.markdown("""
 <div class="hero">
   <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
-  <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — phong cách BIDV Premier.</p>
+  <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — emerald–gold, hiện đại & chuyên nghiệp.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ============ SIDEBAR ============
+# ---------- Sidebar ----------
 st.sidebar.header("⚙️ Tùy chọn")
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
 mode = ParseMode[mode_str]
@@ -143,7 +112,7 @@ if uploaded is not None:
     df_preview = pd.read_csv(uploaded)
     address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
 
-# ============ Helpers ============
+# ---------- Helpers ----------
 def to_clean_df(obj: Any) -> pd.DataFrame:
     if obj is None: return pd.DataFrame()
     data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items() if not k.startswith("_") and v is not None}
@@ -162,7 +131,7 @@ def render_map(df: pd.DataFrame):
                           get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9)
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style), use_container_width=True)
 
-# ============ SINGLE ADDRESS ============
+# ---------- Single address ----------
 st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
 st.caption("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
 address_input = st.text_input("Nhập địa chỉ", "70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
@@ -205,7 +174,7 @@ if convert_clicked:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ============ BATCH CSV ============
+# ---------- Batch CSV ----------
 st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt (CSV)</div>', unsafe_allow_html=True)
 if uploaded is None:
     st.caption("Tải file CSV ở sidebar để bắt đầu.")
@@ -234,16 +203,7 @@ else:
             st.dataframe(df_out.head(50), use_container_width=True)
             st.download_button("⬇️ Tải kết quả (CSV)",
                                df_out.to_csv(index=False).encode("utf-8"),
-                               "converted_addresses.csv",
-                               "text/csv")
+                               "converted_addresses.csv", "text/csv")
         except Exception as e:
             st.error(f"❌ Lỗi batch: {e}")
 st.markdown('</div>', unsafe_allow_html=True)
-
-# ============ FOOTER ============
-st.markdown(f"""
-<div class="footer">
-  <img src="{PREMIER_LOCKUP}" onerror="this.src='{LOGO_URL}'" alt="BIDV Premier"/>
-  <span>© Ngân hàng TMCP Đầu tư và Phát triển Việt Nam</span>
-</div>
-""", unsafe_allow_html=True)

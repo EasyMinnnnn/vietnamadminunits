@@ -1,6 +1,5 @@
 # app.py
 import os
-from string import Template
 from typing import Dict, Any
 
 import pandas as pd
@@ -8,187 +7,175 @@ import pydeck as pdk
 import streamlit as st
 
 from vietnamadminunits import parse_address, convert_address, ParseMode
-from vietnamadminunits.pandas import convert_address_column  # noqa
+from vietnamadminunits.pandas import convert_address_column
 
-# ---------------- BASIC SETUP ----------------
+# ============ PAGE ============
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ---------------- CSS ----------------
+# ---------- Branding (tuỳ chọn thay bằng URL/logo của bạn) ----------
+LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/BIDV_logo.svg/2560px-BIDV_logo.svg.png"  # fallback
+PREMIER_LOCKUP = "https://i.imgur.com/1s3z0sI.png"  # nếu có logo Premier riêng, thay URL này
+
+# ============ CSS ============
 CSS = """
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root{
-  --gold: #D4AF37;
-  --gold-hi: #FFD700;
-  --emerald: #066E68;
-  --emerald-soft: #0E6963;
-  --panel: rgba(255,255,255,.045);
-  --panel-bd: rgba(255,255,255,.08);
-  --shadow: 0 12px 32px rgba(0,0,0,.28);
-  --r-xl: 18px;
+  --gold:#D4AF37; --gold-hi:#FFD700;
+  --emerald-900:#0A3F3D; --emerald-800:#0B4F4B; --emerald-700:#0E6963; --emerald:#066E68;
+  --panel:rgba(255,255,255,.045); --panel-bd:rgba(255,255,255,.09);
+  --shadow:0 14px 36px rgba(0,0,0,.26);
+  --r:14px; --r-lg:18px; --r-xl:22px;
 }
+html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+.stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%) ; color:#F3FBFA; }
+.block-container{ max-width:1180px; padding-top:.75rem; }
 
-/* Sidebar */
-[data-testid="stSidebar"] > div:first-child{
-  background: var(--emerald-soft);
+/* Topbar */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  background:linear-gradient(180deg, #0E6963 0%, #0B4F4B 100%);
+  border:1px solid var(--panel-bd); border-radius:14px; padding:8px 14px; box-shadow:var(--shadow); margin-bottom:14px;
 }
-section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{
-  color: var(--gold);
-}
+.topbar .brand{display:flex; align-items:center; gap:10px;}
+.topbar img{ height:26px; object-fit:contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.25)); }
+.topbar .tag{ color:var(--gold); font-weight:800; letter-spacing:.2px; font-size:.92rem; opacity:.95; }
 
-/* Hero compact */
+/* Hero — Premier look (diagonal overlay + gold bar) */
 .hero{
-  position:relative; padding:20px 24px;
-  border-radius:var(--r-xl);
-  background: linear-gradient(180deg, #107A73 0%, var(--emerald-soft) 100%);
-  border:1px solid var(--panel-bd);
-  box-shadow:var(--shadow);
-  margin:8px 0 18px;
+  position:relative; padding:22px 26px; border-radius:var(--r-xl);
+  background:linear-gradient(135deg, #0F7B74 0%, #0E6963 55%, #0B4F4B 100%);
+  border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px;
+  overflow:hidden;
 }
 .hero:before{
-  content:""; position:absolute; left:18px; right:18px; top:8px; height:7px;
-  background: linear-gradient(90deg, var(--gold), var(--gold-hi));
-  border-radius:10px;
+  content:""; position:absolute; inset:0;
+  background: linear-gradient(120deg, transparent 0 60%, rgba(255,255,255,.05) 62%, transparent 64%);
+  pointer-events:none;
 }
-.hero h1{
-  margin:.4rem 0 .25rem; font-weight:900; letter-spacing:.2px; color:var(--gold);
+.hero:after{
+  content:""; position:absolute; left:22px; right:22px; top:10px; height:8px;
+  background:linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius:10px;
 }
-.hero p{
-  margin:0; color:#CFE7E5;
-}
+.hero h1{ margin:.55rem 0 .3rem; font-weight:900; letter-spacing:.2px; color:var(--gold); }
+.hero p{ margin:0; color:#CFE7E5; }
 
-/* Section card */
-.card{
-  background:var(--panel); border:1px solid var(--panel-bd);
-  border-radius:var(--r-xl); box-shadow:var(--shadow);
-  padding:14px 16px; margin-bottom:14px; backdrop-filter:blur(6px);
-}
-.card .card-title{
-  display:flex; gap:10px; align-items:center; font-weight:800; color:var(--gold); margin-bottom:8px;
-}
-.badge{
-  display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
-  border-radius:999px; background:var(--emerald);
-}
+/* Cards */
+.card{ background:var(--panel); border:1px solid var(--panel-bd); border-radius:var(--r-lg);
+       box-shadow:var(--shadow); padding:14px 16px; margin-bottom:14px; backdrop-filter:blur(6px); }
+.card .card-title{ display:flex; gap:10px; align-items:center; font-weight:800; color:var(--gold); margin-bottom:8px; }
+.badge{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:999px; background:var(--emerald); }
 
 /* Inputs */
-.stTextInput input, .stSelectbox div[data-baseweb="select"]>div,
-.stTextArea textarea, .stNumberInput input{
-  background:#fff !important; color:#000 !important; height:44px;
-  border-radius:12px !important; border:1px solid #E5E7EB !important;
+.stTextInput input, .stSelectbox div[data-baseweb="select"]>div, .stTextArea textarea, .stNumberInput input{
+  background:#fff !important; color:#111 !important; height:44px; border-radius:12px !important; border:1px solid #E5E7EB !important;
 }
 
 /* Buttons */
 .stButton > button{
   border:0; border-radius:12px; padding:10px 16px; font-weight:800;
-  box-shadow:0 6px 16px rgba(0,0,0,.18);
-  transition:transform .05s,filter .15s;
+  box-shadow:0 6px 16px rgba(0,0,0,.18); transition:transform .05s, filter .15s;
 }
-.btn-primary > button{
-  background:linear-gradient(90deg, var(--gold), var(--gold-hi)) !important;
-  color:#111 !important;
-}
-.btn-ghost > button{
-  background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none;
-}
-.stButton > button:hover{ filter:brightness(.97); }
-.stButton > button:active{ transform:translateY(1px); }
+.btn-primary > button{ background:linear-gradient(90deg, var(--gold), var(--gold-hi)) !important; color:#111 !important; }
+.btn-ghost   > button{ background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none; }
+.stButton > button:hover{ filter:brightness(.97); } .stButton > button:active{ transform:translateY(1px); }
 
-/* DataFrame */
+/* Table */
 [data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
-  background:var(--emerald) !important; color:var(--gold) !important;
-  font-weight:800 !important; border-bottom:2px solid var(--gold) !important;
+  background:var(--emerald) !important; color:var(--gold) !important; font-weight:800 !important; border-bottom:2px solid var(--gold) !important;
 }
-.stDataFrame{
-  border:1.5px solid color-mix(in srgb, var(--gold) 60%, transparent);
-  border-radius:12px; overflow:hidden;
-}
-.stDataFrame tbody td{
-  border-bottom:1px solid rgba(255,255,255,.06) !important;
-}
+.stDataFrame{ border:1.6px solid color-mix(in srgb, var(--gold) 58%, transparent); border-radius:12px; overflow:hidden; }
+.stDataFrame tbody td{ border-bottom:1px solid rgba(255,255,255,.08) !important; }
 
 /* Alerts */
 .stAlert{ border-radius:12px; }
-.stAlert.success{
-  background:rgba(212,175,55,.10) !important;
-  border-left:5px solid var(--gold) !important;
-}
+.stAlert.success{ background:rgba(212,175,55,.10) !important; border-left:5px solid var(--gold) !important; }
+
+/* Sidebar */
+[data-testid="stSidebar"] > div:first-child{ background:#0E6963; }
+section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
 
 /* Map frame */
-.pydeck_chart, .stDeckGlJsonChart{
-  border-radius:12px; overflow:hidden;
-  border:1px solid color-mix(in srgb, var(--gold) 35%, transparent);
-}
+.pydeck_chart, .stDeckGlJsonChart{ border-radius:12px; overflow:hidden; border:1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
 
-/* Micro spacing tweaks */
-h2, h3{ letter-spacing:.1px; }
+/* Footer bar */
+.footer{
+  display:flex; align-items:center; gap:12px;
+  background:#0E6963; border:1px solid var(--panel-bd); border-radius:14px;
+  padding:8px 12px; margin-top:18px; color:var(--gold);
+}
+.footer img{ height:18px; object-fit:contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.25)); }
 </style>
 """
-
 st.markdown(CSS, unsafe_allow_html=True)
 
-# ---------------- HERO ----------------
-st.markdown(
-    """
-    <div class="hero">
-      <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
-      <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — hiện đại & chuyên nghiệp.</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# ============ TOPBAR ============
+st.markdown(f"""
+<div class="topbar">
+  <div class="brand">
+    <img src="{PREMIER_LOCKUP}" onerror="this.src='{LOGO_URL}'" alt="BIDV Premier"/>
+    <span class="tag">Premier</span>
+  </div>
+  <div class="tag">Emerald–Gold UI</div>
+</div>
+""", unsafe_allow_html=True)
 
-# ---------------- SIDEBAR ----------------
+# ============ HERO ============
+st.markdown("""
+<div class="hero">
+  <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
+  <p>Chuẩn hóa & chuyển đổi địa chỉ theo cấu trúc 63 ⇄ 34 tỉnh — phong cách BIDV Premier.</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ============ SIDEBAR ============
 st.sidebar.header("⚙️ Tùy chọn")
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
 mode = ParseMode[mode_str]
 keep_street = st.sidebar.checkbox("Giữ tên đường", True)
 short_name = st.sidebar.checkbox("Tên rút gọn", True)
-level = st.sidebar.number_input(
-    "Level", min_value=1, max_value=3 if mode_str == "LEGACY" else 2,
-    value=3 if mode_str == "LEGACY" else 2, step=1,
-)
+level = st.sidebar.number_input("Level", 1, 3 if mode_str=="LEGACY" else 2, 3 if mode_str=="LEGACY" else 2, step=1)
 st.sidebar.markdown("---")
 st.sidebar.subheader("Batch CSV")
 uploaded = st.sidebar.file_uploader("Tải CSV (UTF-8)", type=["csv"])
 address_col = None
 if uploaded is not None:
     df_preview = pd.read_csv(uploaded)
-    cols = list(df_preview.columns)
-    address_col = st.sidebar.selectbox("Chọn cột địa chỉ", cols)
+    address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
 
-# ---------------- HELPERS ----------------
+# ============ Helpers ============
 def to_clean_df(obj: Any) -> pd.DataFrame:
     if obj is None: return pd.DataFrame()
-    data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items()
-                            if not k.startswith("_") and v is not None}
-    default_order = ["province","district","ward","street",
-                     "short_province","short_district","short_ward",
-                     "province_type","district_type","ward_type",
-                     "latitude","longitude"]
-    ordered = [c for c in default_order if c in data] + [c for c in data if c not in default_order]
-    return pd.DataFrame([{k: data.get(k) for k in ordered}])
+    data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items() if not k.startswith("_") and v is not None}
+    order = ["province","district","ward","street","short_province","short_district","short_ward",
+             "province_type","district_type","ward_type","latitude","longitude"]
+    cols = [c for c in order if c in data] + [c for c in data if c not in order]
+    return pd.DataFrame([{k: data.get(k) for k in cols}])
 
 def render_map(df: pd.DataFrame):
-    if {"latitude", "longitude"}.issubset(df.columns) and df["latitude"].notna().any():
+    if {"latitude","longitude"}.issubset(df.columns) and df["latitude"].notna().any():
         lat = float(df["latitude"].iloc[0]); lon = float(df["longitude"].iloc[0])
         view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10)
         style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
-        layer = pdk.Layer(
-            "ScatterplotLayer",
-            data=df.rename(columns={"latitude":"lat", "longitude":"lon"}),
-            get_position="[lon, lat]",
-            get_radius=220, pickable=True, opacity=0.9,
-        )
+        layer = pdk.Layer("ScatterplotLayer",
+                          data=df.rename(columns={"latitude":"lat","longitude":"lon"}),
+                          get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9)
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style), use_container_width=True)
 
-# ---------------- SINGLE ADDRESS ----------------
+# ============ SINGLE ADDRESS ============
 st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
 st.caption("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
 address_input = st.text_input("Nhập địa chỉ", "70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
 
-c1, c2 = st.columns([1, 1])
-parse_clicked   = c1.button("Phân tích địa chỉ")
-convert_clicked = c2.button("Chuẩn hóa (→ 2025)")
+c1, c2 = st.columns([1,1])
+with c1:
+    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+    parse_clicked = st.button("Phân tích địa chỉ")
+    st.markdown('</div>', unsafe_allow_html=True)
+with c2:
+    st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
+    convert_clicked = st.button("Chuẩn hóa (→ 2025)")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if parse_clicked:
     try:
@@ -218,7 +205,7 @@ if convert_clicked:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------------- BATCH CSV ----------------
+# ============ BATCH CSV ============
 st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt (CSV)</div>', unsafe_allow_html=True)
 if uploaded is None:
     st.caption("Tải file CSV ở sidebar để bắt đầu.")
@@ -226,24 +213,37 @@ else:
     st.write("**Xem nhanh dữ liệu đầu vào:**")
     st.dataframe(df_preview.head(20), use_container_width=True)
 
+    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
     run_batch = st.button("⚙️ Chạy chuẩn hóa CSV")
+    st.markdown('</div>', unsafe_allow_html=True)
+
     if run_batch and address_col:
         try:
-            df_out = convert_address_column(
-                df_preview.copy(),
-                address=address_col,
-                convert_mode="CONVERT_2025",
-                inplace=False,
-                prefix="converted_",
-                suffix="",
-                short_name=short_name,
-                show_progress=True,
-            )
+            with st.spinner("Đang chuẩn hóa..."):
+                df_out = convert_address_column(
+                    df_preview.copy(),
+                    address=address_col,
+                    convert_mode="CONVERT_2025",
+                    inplace=False,
+                    prefix="converted_",
+                    suffix="",
+                    short_name=short_name,
+                    show_progress=True,
+                )
             st.success("✅ Xong!")
             st.dataframe(df_out.head(50), use_container_width=True)
             st.download_button("⬇️ Tải kết quả (CSV)",
                                df_out.to_csv(index=False).encode("utf-8"),
-                               "converted_addresses.csv", "text/csv")
+                               "converted_addresses.csv",
+                               "text/csv")
         except Exception as e:
             st.error(f"❌ Lỗi batch: {e}")
 st.markdown('</div>', unsafe_allow_html=True)
+
+# ============ FOOTER ============
+st.markdown(f"""
+<div class="footer">
+  <img src="{PREMIER_LOCKUP}" onerror="this.src='{LOGO_URL}'" alt="BIDV Premier"/>
+  <span>© Ngân hàng TMCP Đầu tư và Phát triển Việt Nam</span>
+</div>
+""", unsafe_allow_html=True)

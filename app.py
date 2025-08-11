@@ -95,7 +95,7 @@ st.markdown(CSS, unsafe_allow_html=True)
 # ================== HERO ==================
 st.markdown("""
 <div class="hero">
-  <h1>📍 Công cụ chuẩn hóa địa chỉ Việt Nam</h1>
+  <h1>📍 Công cụ chuyển đổi địa giới hành chính Việt Nam</h1>
 </div>
 """, unsafe_allow_html=True)
 

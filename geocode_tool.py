@@ -32,8 +32,8 @@ class AdminUnit:
 
 # ---------- Helpers ----------
 def _norm(s: str) -> str:
-    """Chuẩn hóa tên cột: lower, bỏ khoảng trắng/thừa, thay về underscore."""
-    return re.sub(r"[^a-z0-9]+", "_", s.strip().lower()).strip("_")
+    """Chuẩn hóa tên cột: lower, thay non-alnum bằng '_'."""
+    return re.sub(r"[^a-z0-9]+", "_", (s or "").strip().lower()).strip("_")
 
 
 def _first_col(header_map: Dict[str, int], candidates: List[str]) -> Optional[int]:
@@ -46,23 +46,20 @@ def _first_col(header_map: Dict[str, int], candidates: List[str]) -> Optional[in
 
 def _parse_bounds(bounds_str: str) -> Tuple[float, float, float, float]:
     """
-    Parse 'min_lat,min_lon – max_lat,max_lon' (có thể là '-', '–', '—', có/không khoảng trắng).
+    Parse 'min_lat,min_lon – max_lat,max_lon' (chấp nhận '-', '–', '—').
+    Tự sửa nếu min/max bị đảo.
     """
-    if bounds_str is None:
-        raise ValueError("bounds_str is None")
-    s = str(bounds_str)
-    # tách bằng mọi loại dấu gạch ngang phổ biến
+    s = str(bounds_str or "")
     parts = re.split(r"\s*[–—\-]\s*", s)
     if len(parts) != 2:
         raise ValueError(f"Invalid bounds string: {s}")
     def to_pair(t: str) -> Tuple[float, float]:
-        a = [p.strip() for p in t.split(",")]
+        a = [p.strip() for p in (t or "").split(",")]
         if len(a) != 2:
             raise ValueError(f"Invalid coord pair: {t}")
         return float(a[0]), float(a[1])
     (min_lat, min_lon) = to_pair(parts[0])
     (max_lat, max_lon) = to_pair(parts[1])
-    # Đảm bảo min<=max (nếu dữ liệu đảo trục)
     if min_lat > max_lat:
         min_lat, max_lat = max_lat, min_lat
     if min_lon > max_lon:
@@ -73,7 +70,6 @@ def _parse_bounds(bounds_str: str) -> Tuple[float, float, float, float]:
 def _read_csv_anywhere(path_or_url: str) -> List[List[str]]:
     """Đọc CSV từ local hoặc URL; trả về list các dòng (list[str])."""
     if re.match(r"^https?://", path_or_url, re.I):
-        # đọc từ URL
         ua_email = os.getenv("NOMINATIM_EMAIL") or "contact@example.com"
         headers = {"User-Agent": f"VietnamGeocoder/1.0 ({ua_email})"}
         r = requests.get(path_or_url, headers=headers, timeout=30)
@@ -112,10 +108,16 @@ class Geocoder:
         header_norm = [_norm(h) for h in header_raw]
         header_map = {h: i for i, h in enumerate(header_norm)}
 
-        # dò các cột cần thiết
-        province_idx = _first_col(header_map, ["province", "newprovince", "new_province", "province_name"])
-        ward_idx     = _first_col(header_map, ["ward", "newward", "new_ward", "ward_name"])
-        bounds_idx   = _first_col(header_map, ["wardbounds", "bounds", "ward_bounds"])
+        # dò các cột cần thiết (linh hoạt tên cột)
+        province_idx = _first_col(header_map, [
+            "province", "newprovince", "new_province", "province_name", "short_province"
+        ])
+        ward_idx = _first_col(header_map, [
+            "ward", "newward", "new_ward", "ward_name", "short_ward"
+        ])
+        bounds_idx = _first_col(header_map, [
+            "wardbounds", "bounds", "ward_bounds"
+        ])
 
         if province_idx is None or ward_idx is None or bounds_idx is None:
             raise RuntimeError(
@@ -125,9 +127,11 @@ class Geocoder:
 
         for row in rows[1:]:
             try:
-                province = row[province_idx].strip()
-                ward = row[ward_idx].strip()
-                bounds_str = row[bounds_idx].strip()
+                province = (row[province_idx] or "").strip()
+                ward = (row[ward_idx] or "").strip()
+                bounds_str = (row[bounds_idx] or "").strip()
+                if not province or not ward or not bounds_str:
+                    continue
                 bounds = _parse_bounds(bounds_str)
                 self.wards.append(AdminUnit(province=province, ward=ward, ward_bounds=bounds))
             except Exception:
@@ -159,8 +163,10 @@ class Geocoder:
         ua_email = os.getenv("NOMINATIM_EMAIL") or "contact@example.com"
         headers = {"User-Agent": f"VietnamGeocoder/1.0 ({ua_email})"}
         try:
-            r = requests.get("https://nominatim.openstreetmap.org/reverse",
-                             params=params, headers=headers, timeout=15)
+            r = requests.get(
+                "https://nominatim.openstreetmap.org/reverse",
+                params=params, headers=headers, timeout=15
+            )
             if r.status_code != 200:
                 return None, None
             data = r.json()
@@ -193,8 +199,8 @@ class Geocoder:
         parts.append(unit.province)
 
         return {
-            "house_number": house_number,
-            "road": road,
+            "house_number": house_number or "",
+            "road": road or "",
             "ward": unit.ward,
             "province": unit.province,
             "latitude": float(lat),

@@ -1,197 +1,203 @@
+# geocode_tool.py
 """
-Geocode tool combining OpenStreetMap reverse‑geocoding with
-Vietnamese administrative boundaries.
+Reverse geocoding Việt Nam: OSM (Nominatim) + ranh giới xã/phường (CSV).
 
-This module demonstrates how to convert a pair of geographic
-coordinates (latitude, longitude) into a human‑readable address of
-the form “<house number> <street>, <commune/ward>, <province>”.  It
-uses the following data sources:
-
-* **OpenStreetMap Nominatim API** – the reverse API translates a
-  coordinate into address components.  According to the official
-  documentation, the reverse API finds the nearest suitable OSM
-  object and returns its address details【577374665323068†L87-L103】.  The API
-  is queried via HTTP with parameters such as `lat`, `lon` and
-  `format=jsonv2`.  When `addressdetails=1`, the response includes
-  structured address elements like house number and road【577374665323068†L140-L151】.
-
-* **Vietnamese administrative units** – a CSV dataset (for example
-  `legacy_63-province-10040-ward_with_location.csv` from the
-  ``vietnamadminunits`` project) containing latitude/longitude bounds
-  for every ward/commune.  Each row has fields such as
-  `wardBounds` and `provinceBounds` which store a south‑west and
-  north‑east coordinate pair as a string (e.g., "20.995099,105.797482 – 21.05038,105.876446")【581511831359102†L4-L11】.  By
-  comparing the input coordinate with these bounds we can determine
-  which ward/province contains it.
-
-To use this module you will need to download the boundary CSV file
-separately (for example from the ``vietnamadminunits`` GitHub
-repository) and point ``WARD_CSV_PATH`` to its location.  You also
-need an active internet connection to query Nominatim.
-
-Example:
-
-```
-from geocode_tool import Geocoder
-
-# Create the geocoder (first call may take a moment to load the CSV)
-geocoder = Geocoder('path/to/legacy_63-province-10040-ward_with_location.csv')
-
-# Geocode a point in Hanoi
-address = geocoder.geocode(21.0468, 105.8481)
-print(address)
-# → '135 Pilkington Avenue, Phúc Xá, Hà Nội' (example)
-```
-
-Note: Nominatim has usage limits and a fair‑use policy.  Always set
-a valid ``User‑Agent`` header and refrain from sending large volumes
-of requests.
+- Khởi tạo với đường dẫn local hoặc URL raw tới CSV ranh giới.
+- Với (lat, lon): tìm xã/phường bằng hộp bao trong CSV, gọi Nominatim lấy
+  house_number/road, và trả về dict:
+  {
+    house_number, road, ward, province, latitude, longitude, formatted
+  }
 """
 
 from __future__ import annotations
 
 import csv
+import io
 import os
+import re
 from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Dict
 
 import requests
 
 
+# ---------- Data model ----------
 @dataclass
 class AdminUnit:
-    """Represents a Vietnamese ward/commune with its bounding box."""
     province: str
-    district: Optional[str]
     ward: str
-    province_short: Optional[str]
-    ward_type: Optional[str]
     ward_bounds: Tuple[float, float, float, float]  # (min_lat, min_lon, max_lat, max_lon)
 
 
-class Geocoder:
-    """Geocoder combining OSM reverse geocoding with ward/province lookup."""
+# ---------- Helpers ----------
+def _norm(s: str) -> str:
+    """Chuẩn hóa tên cột: lower, bỏ khoảng trắng/thừa, thay về underscore."""
+    return re.sub(r"[^a-z0-9]+", "_", s.strip().lower()).strip("_")
 
-    def __init__(self, ward_csv_path: str):
-        if not os.path.exists(ward_csv_path):
-            raise FileNotFoundError(f"Boundary CSV not found: {ward_csv_path}")
-        self.wards: List[AdminUnit] = []
-        self._load_wards(ward_csv_path)
 
-    def _parse_bounds(self, bounds_str: str) -> Tuple[float, float, float, float]:
-        """Parse a bounds string of the form 'min_lat,min_lon – max_lat,max_lon'."""
-        if '–' in bounds_str:
-            # long dash used in the dataset
-            parts = bounds_str.split('–')
-        elif '-' in bounds_str:
-            parts = bounds_str.split('-')
-        else:
-            raise ValueError(f"Invalid bounds string: {bounds_str}")
-        sw = parts[0].strip().split(',')
-        ne = parts[1].strip().split(',')
-        min_lat, min_lon = float(sw[0]), float(sw[1])
-        max_lat, max_lon = float(ne[0]), float(ne[1])
-        return (min_lat, min_lon, max_lat, max_lon)
+def _first_col(header_map: Dict[str, int], candidates: List[str]) -> Optional[int]:
+    """Tìm cột đầu tiên khớp trong danh sách ứng viên (đã normalize)."""
+    for c in candidates:
+        if c in header_map:
+            return header_map[c]
+    return None
 
-    def _load_wards(self, csv_path: str) -> None:
-        """Load wards and their bounds from a CSV file."""
-        with open(csv_path, 'r', encoding='utf-8') as f:
+
+def _parse_bounds(bounds_str: str) -> Tuple[float, float, float, float]:
+    """
+    Parse 'min_lat,min_lon – max_lat,max_lon' (có thể là '-', '–', '—', có/không khoảng trắng).
+    """
+    if bounds_str is None:
+        raise ValueError("bounds_str is None")
+    s = str(bounds_str)
+    # tách bằng mọi loại dấu gạch ngang phổ biến
+    parts = re.split(r"\s*[–—\-]\s*", s)
+    if len(parts) != 2:
+        raise ValueError(f"Invalid bounds string: {s}")
+    def to_pair(t: str) -> Tuple[float, float]:
+        a = [p.strip() for p in t.split(",")]
+        if len(a) != 2:
+            raise ValueError(f"Invalid coord pair: {t}")
+        return float(a[0]), float(a[1])
+    (min_lat, min_lon) = to_pair(parts[0])
+    (max_lat, max_lon) = to_pair(parts[1])
+    # Đảm bảo min<=max (nếu dữ liệu đảo trục)
+    if min_lat > max_lat:
+        min_lat, max_lat = max_lat, min_lat
+    if min_lon > max_lon:
+        min_lon, max_lon = max_lon, min_lon
+    return (min_lat, min_lon, max_lat, max_lon)
+
+
+def _read_csv_anywhere(path_or_url: str) -> List[List[str]]:
+    """Đọc CSV từ local hoặc URL; trả về list các dòng (list[str])."""
+    if re.match(r"^https?://", path_or_url, re.I):
+        # đọc từ URL
+        ua_email = os.getenv("NOMINATIM_EMAIL") or "contact@example.com"
+        headers = {"User-Agent": f"VietnamGeocoder/1.0 ({ua_email})"}
+        r = requests.get(path_or_url, headers=headers, timeout=30)
+        r.raise_for_status()
+        text = r.text
+        f = io.StringIO(text)
+        reader = csv.reader(f)
+        return [row for row in reader]
+    else:
+        with open(path_or_url, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
-            # Read header to find column indices
-            header = next(reader)
-            # Normalise header names by stripping whitespace
-            header = [h.strip() for h in header]
-            # Find relevant columns – fallback to known names
+            return [row for row in reader]
+
+
+# ---------- Main class ----------
+class Geocoder:
+    """
+    Geocoder kết hợp:
+      - Tra ranh xã/phường bằng hộp bao từ CSV
+      - Nominatim reverse để lấy số nhà/đường
+    """
+
+    def __init__(self, csv_path_or_url: str):
+        if not re.match(r"^https?://", csv_path_or_url, re.I) and not os.path.exists(csv_path_or_url):
+            raise FileNotFoundError(f"Boundary CSV not found: {csv_path_or_url}")
+        self.wards: List[AdminUnit] = []
+        self._load_wards(csv_path_or_url)
+
+    # ---- Load wards ----
+    def _load_wards(self, path_or_url: str) -> None:
+        rows = _read_csv_anywhere(path_or_url)
+        if not rows:
+            raise RuntimeError("CSV empty or unreadable")
+
+        header_raw = rows[0]
+        header_norm = [_norm(h) for h in header_raw]
+        header_map = {h: i for i, h in enumerate(header_norm)}
+
+        # dò các cột cần thiết
+        province_idx = _first_col(header_map, ["province", "newprovince", "new_province", "province_name"])
+        ward_idx     = _first_col(header_map, ["ward", "newward", "new_ward", "ward_name"])
+        bounds_idx   = _first_col(header_map, ["wardbounds", "bounds", "ward_bounds"])
+
+        if province_idx is None or ward_idx is None or bounds_idx is None:
+            raise RuntimeError(
+                "CSV thiếu cột. Cần tối thiểu: province*, ward*, wardBounds*. "
+                f"Header chuẩn hóa: {header_norm}"
+            )
+
+        for row in rows[1:]:
             try:
-                province_idx = header.index('province')
-                district_idx = header.index('district') if 'district' in header else None
-                ward_idx = header.index('ward')
-                province_short_idx = header.index('provinceShort') if 'provinceShort' in header else None
-                ward_type_idx = header.index('wardType') if 'wardType' in header else None
-                bounds_idx = header.index('wardBounds')
-            except ValueError as exc:
-                raise RuntimeError("CSV does not contain expected columns: " + str(exc))
+                province = row[province_idx].strip()
+                ward = row[ward_idx].strip()
+                bounds_str = row[bounds_idx].strip()
+                bounds = _parse_bounds(bounds_str)
+                self.wards.append(AdminUnit(province=province, ward=ward, ward_bounds=bounds))
+            except Exception:
+                # bỏ qua dòng lỗi
+                continue
 
-            for row in reader:
-                try:
-                    bounds_str = row[bounds_idx].strip()
-                    bounds = self._parse_bounds(bounds_str)
-                    province = row[province_idx].strip()
-                    district = row[district_idx].strip() if district_idx is not None else None
-                    ward = row[ward_idx].strip()
-                    province_short = row[province_short_idx].strip() if province_short_idx is not None else None
-                    ward_type = row[ward_type_idx].strip() if ward_type_idx is not None else None
-                    self.wards.append(AdminUnit(
-                        province=province,
-                        district=district,
-                        ward=ward,
-                        province_short=province_short,
-                        ward_type=ward_type,
-                        ward_bounds=bounds,
-                    ))
-                except Exception:
-                    # Skip malformed lines silently
-                    continue
-
+    # ---- Admin lookup ----
     def _lookup_admin_unit(self, lat: float, lon: float) -> Optional[AdminUnit]:
-        """Find the ward whose bounding box contains the point (lat, lon)."""
-        matches: List[Tuple[AdminUnit, float]] = []
-        for unit in self.wards:
-            min_lat, min_lon, max_lat, max_lon = unit.ward_bounds
-            if min_lat <= lat <= max_lat and min_lon <= lon <= max_lon:
-                # compute area for tie‑breaking (smaller area preferred)
-                area = (max_lat - min_lat) * (max_lon - min_lon)
-                matches.append((unit, area))
-        if not matches:
+        candidates: List[Tuple[AdminUnit, float]] = []
+        for u in self.wards:
+            min_lat, min_lon, max_lat, max_lon = u.ward_bounds
+            if (min_lat <= lat <= max_lat) and (min_lon <= lon <= max_lon):
+                area = max(1e-12, (max_lat - min_lat) * (max_lon - min_lon))
+                candidates.append((u, area))
+        if not candidates:
             return None
-        # Return the smallest bounding box match
-        matches.sort(key=lambda x: x[1])
-        return matches[0][0]
+        candidates.sort(key=lambda x: x[1])  # chọn hộp bao nhỏ nhất
+        return candidates[0][0]
 
-    def _reverse_geocode(self, lat: float, lon: float) -> Tuple[Optional[str], Optional[str]]:
-        """Call Nominatim reverse API and extract house number and street.
-
-        Returns a tuple (house_number, road) where each component may be None
-        if not provided by OSM.  See Nominatim docs for details【577374665323068†L274-L317】.
-        """
+    # ---- Nominatim ----
+    def _reverse_geocode_osm(self, lat: float, lon: float) -> Tuple[Optional[str], Optional[str]]:
         params = {
-            'format': 'jsonv2',
-            'lat': lat,
-            'lon': lon,
-            'addressdetails': 1,
+            "format": "jsonv2",
+            "lat": lat,
+            "lon": lon,
+            "addressdetails": 1,
+            "accept-language": os.getenv("NOMINATIM_LANG", "vi"),
         }
-        headers = {
-            'User-Agent': 'VietnamGeocoder/1.0 (contact: example@example.com)'
-        }
+        ua_email = os.getenv("NOMINATIM_EMAIL") or "contact@example.com"
+        headers = {"User-Agent": f"VietnamGeocoder/1.0 ({ua_email})"}
         try:
-            resp = requests.get('https://nominatim.openstreetmap.org/reverse', params=params, headers=headers, timeout=10)
-            if resp.status_code != 200:
+            r = requests.get("https://nominatim.openstreetmap.org/reverse",
+                             params=params, headers=headers, timeout=15)
+            if r.status_code != 200:
                 return None, None
-            data = resp.json()
-            address = data.get('address', {})
-            house_number = address.get('house_number')
-            road = address.get('road')
-            return house_number, road
+            data = r.json()
+            addr = data.get("address", {}) if isinstance(data, dict) else {}
+            return addr.get("house_number"), addr.get("road")
         except Exception:
             return None, None
 
-    def geocode(self, lat: float, lon: float) -> Optional[str]:
-        """Return a human‑readable address string for the given coordinate.
-
-        The returned string is assembled as `<house number> <road>, <ward>, <province>`.
-        If the house number or road are missing, they will be omitted accordingly.
-        If no matching ward/province can be found, returns None.
+    # ---- Public API ----
+    def geocode(self, lat: float, lon: float) -> Optional[Dict[str, Optional[str]]]:
+        """
+        Trả về dict:
+        {
+          house_number, road, ward, province, latitude, longitude, formatted
+        }
+        hoặc None nếu không tìm thấy xã/phường.
         """
         unit = self._lookup_admin_unit(lat, lon)
         if not unit:
             return None
-        house_number, road = self._reverse_geocode(lat, lon)
+
+        house_number, road = self._reverse_geocode_osm(lat, lon)
+
         parts: List[str] = []
         if house_number and road:
             parts.append(f"{house_number} {road}")
         elif road:
             parts.append(road)
-        # Append ward and province.  We prefer the short form if available.
         parts.append(unit.ward)
         parts.append(unit.province)
-        return ', '.join(parts)
+
+        return {
+            "house_number": house_number,
+            "road": road,
+            "ward": unit.ward,
+            "province": unit.province,
+            "latitude": float(lat),
+            "longitude": float(lon),
+            "formatted": ", ".join([p for p in parts if p]),
+        }

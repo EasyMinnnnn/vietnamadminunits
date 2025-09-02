@@ -1,7 +1,8 @@
 # app.py
 import os
 import time
-from typing import Dict, Any
+from pathlib import Path
+from typing import Dict, Any, Optional
 
 import pandas as pd
 import pydeck as pdk
@@ -99,6 +100,45 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ================== HELPERS (file load) ==================
+def _read_csv_with_fallback(file, encoding_mode: str = "auto") -> pd.DataFrame:
+    """
+    Try encodings in order when encoding_mode == 'auto':
+    utf-8-sig -> utf-8 -> latin1 -> cp1258
+    """
+    tried = []
+    if encoding_mode and encoding_mode.lower() != "auto":
+        return pd.read_csv(file, encoding=encoding_mode)
+
+    for enc in ("utf-8-sig", "utf-8", "latin1", "cp1258"):
+        try:
+            file.seek(0)
+            return pd.read_csv(file, encoding=enc)
+        except Exception as e:  # keep trying
+            tried.append(f"{enc}: {e}")
+            continue
+    raise UnicodeDecodeError("utf-8", b"", 0, 1, f"Cannot decode CSV. Tried: {tried}")
+
+def _read_excel(file, sheet_name: Optional[str] = None) -> pd.DataFrame:
+    """Read Excel and optionally a specific sheet; default: first sheet."""
+    file.seek(0)
+    if sheet_name:
+        return pd.read_excel(file, sheet_name=sheet_name)
+    # no sheet selected -> first sheet
+    xls = pd.ExcelFile(file)
+    first = xls.sheet_names[0]
+    file.seek(0)
+    return pd.read_excel(file, sheet_name=first)
+
+def load_table(uploaded, encoding_choice: str = "auto", excel_sheet: Optional[str] = None) -> pd.DataFrame:
+    ext = Path(uploaded.name).suffix.lower()
+    if ext == ".csv":
+        return _read_csv_with_fallback(uploaded, encoding_choice)
+    elif ext in (".xls", ".xlsx"):
+        return _read_excel(uploaded, excel_sheet)
+    else:
+        raise ValueError("Định dạng không hỗ trợ. Hỗ trợ: CSV, XLS, XLSX.")
+
 # ================== SIDEBAR ==================
 st.sidebar.header("⚙️ Tùy chọn")
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
@@ -107,14 +147,41 @@ keep_street = st.sidebar.checkbox("Giữ tên đường", True)
 short_name = st.sidebar.checkbox("Tên rút gọn", True)
 level = st.sidebar.number_input("Level", 1, 3 if mode_str == "LEGACY" else 2, 3 if mode_str == "LEGACY" else 2, step=1)
 st.sidebar.markdown("---")
-st.sidebar.subheader("Batch CSV")
-uploaded = st.sidebar.file_uploader("Tải CSV (UTF-8)", type=["csv"])
-address_col = None
-if uploaded is not None:
-    df_preview = pd.read_csv(uploaded)
-    address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
+st.sidebar.subheader("Batch (CSV/Excel)")
 
-# ================== HELPERS ==================
+uploaded = st.sidebar.file_uploader("Tải CSV/Excel", type=["csv", "xlsx", "xls"])
+address_col = None
+df_preview = None
+excel_sheet = None
+
+if uploaded is not None:
+    ext = Path(uploaded.name).suffix.lower()
+    # CSV: cho phép chọn encoding
+    if ext == ".csv":
+        encoding_choice = st.sidebar.selectbox(
+            "Encoding (CSV)",
+            ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258"],
+            index=0,
+            help="Nếu lỗi font/UnicodeDecodeError, thử 'latin1' hoặc 'cp1258'."
+        )
+        try:
+            df_preview = load_table(uploaded, encoding_choice)
+        except Exception as e:
+            st.sidebar.error(f"Lỗi đọc CSV: {e}")
+    # Excel: cho phép chọn sheet
+    else:
+        try:
+            uploaded.seek(0)
+            xls = pd.ExcelFile(uploaded)
+            excel_sheet = st.sidebar.selectbox("Chọn sheet", xls.sheet_names, index=0)
+            df_preview = load_table(uploaded, excel_sheet=excel_sheet)
+        except Exception as e:
+            st.sidebar.error(f"Lỗi đọc Excel: {e}")
+
+    if df_preview is not None:
+        address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
+
+# ================== HELPERS (render & geocode) ==================
 def to_clean_df(obj: Any) -> pd.DataFrame:
     if obj is None:
         return pd.DataFrame()
@@ -126,8 +193,15 @@ def to_clean_df(obj: Any) -> pd.DataFrame:
     return pd.DataFrame([{k: data.get(k) for k in cols}])
 
 def render_map(df: pd.DataFrame):
-    if {"latitude","longitude"}.issubset(df.columns) and df["latitude"].notna().any():
-        lat = float(df["latitude"].iloc[0]); lon = float(df["longitude"].iloc[0])
+    if not {"latitude","longitude"}.issubset(df.columns):
+        return
+    df = df.copy()
+    if not df["latitude"].notna().any():
+        return
+    # lấy điểm đầu tiên để set view
+    lat = float(df["latitude"].iloc[0]); lon = float(df["longitude"].iloc[0])
+    # Fallback: nếu không có key hoặc pydeck lỗi -> dùng st.map
+    try:
         view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10)
         style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
         layer = pdk.Layer(
@@ -136,6 +210,8 @@ def render_map(df: pd.DataFrame):
             get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9
         )
         st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style), use_container_width=True)
+    except Exception:
+        st.map(df.rename(columns={"latitude":"lat","longitude":"lon"}), use_container_width=True)
 
 # ================== GEOCODER LOADER (cache) ==================
 CSV_PATH = "data/interim/legacy_63-province-10040-ward_with_location_and_key.csv"
@@ -143,7 +219,6 @@ CSV_PATH = "data/interim/legacy_63-province-10040-ward_with_location_and_key.csv
 @st.cache_resource(show_spinner=False)
 def load_gc():
     path = CSV_PATH
-    # Gọi Geocoder chỉ với path — không truyền email/accept_language
     try:
         return Geocoder(csv_path_or_url=path)
     except TypeError:
@@ -235,24 +310,24 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ================== BATCH CSV ==================
-st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt (CSV)</div>', unsafe_allow_html=True)
-if uploaded is None:
-    st.caption("Tải file CSV ở sidebar để bắt đầu.")
+# ================== BATCH (CSV / EXCEL) ==================
+st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt</div>', unsafe_allow_html=True)
+if uploaded is None or df_preview is None:
+    st.caption("Tải file CSV/Excel ở sidebar để bắt đầu.")
 else:
     st.write("**Xem nhanh dữ liệu đầu vào:**")
     st.dataframe(df_preview.head(20), use_container_width=True)
 
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-    run_batch = st.button("⚙️ Chạy chuẩn hóa CSV")
+    run_batch = st.button("⚙️ Chạy chuẩn hóa")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Nút reverse geocode CSV nếu có cột lat/lon (không phân biệt hoa/thường)
+    # Nút reverse geocode CSV/Excel nếu có cột lat/lon (không phân biệt hoa/thường)
     cols_lower = {c.lower(): c for c in df_preview.columns}
     has_latlon = ("latitude" in cols_lower and "longitude" in cols_lower)
     if has_latlon:
         st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        run_rev = st.button("🧭 Reverse geocode CSV (lat, lon)")
+        run_rev = st.button("🧭 Reverse geocode (lat, lon)")
         st.markdown('</div>', unsafe_allow_html=True)
     else:
         run_rev = False
@@ -274,7 +349,7 @@ else:
             st.dataframe(df_out.head(50), use_container_width=True)
             st.download_button(
                 "⬇️ Tải kết quả (CSV)",
-                df_out.to_csv(index=False).encode("utf-8"),
+                df_out.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
                 "converted_addresses.csv",
                 "text/csv",
             )
@@ -289,8 +364,7 @@ else:
                 rows = []
                 for _, r in df_preview.iterrows():
                     try:
-                        lat = float(r[lat_col])
-                        lon = float(r[lon_col])
+                        lat = float(r[lat_col]); lon = float(r[lon_col])
                     except Exception:
                         rows.append({**r.to_dict(), "formatted": "", "ward": "", "province": "", "road": "", "house_number": ""})
                         continue
@@ -310,7 +384,7 @@ else:
             st.dataframe(df_rev.head(50), use_container_width=True)
             st.download_button(
                 "⬇️ Tải kết quả Reverse (CSV)",
-                df_rev.to_csv(index=False).encode("utf-8"),
+                df_rev.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
                 "reverse_geocoded.csv",
                 "text/csv",
             )

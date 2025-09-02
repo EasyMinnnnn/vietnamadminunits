@@ -226,14 +226,15 @@ def _normalize_points(df: pd.DataFrame, lat_col="latitude", lon_col="longitude")
     # chấp nhận "10,762" hoặc "10.762"
     for c in ["lat", "lon"]:
         s = df[c].astype(str).str.replace(",", ".", regex=False)
-        df[c] = pd.to_numeric(s.str.extract(r"(-?\d+(?:\.\d+)?)")[0], errors="coerce")
+        df[c] = pd.to_numeric(s.str_extract(r"(-?\d+(?:\.\d+)?)")[0], errors="coerce")
 
     # lọc miền hợp lệ + loại NaN
     df = df[df["lat"].between(-90, 90) & df["lon"].between(-180, 180)]
     return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
 def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
-               label_col=None, point_radius=120):
+               label_col=None, point_radius=50):  # nhỏ hơn: 120 -> 50
+    """Hiển thị điểm lên nền Carto 'light' và zoom out nhẹ để nhìn rộng xung quanh."""
     if df is None or df.empty:
         return
     pts = _normalize_points(df, lat_col, lon_col)
@@ -241,15 +242,15 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
         st.warning("Không có toạ độ hợp lệ để hiển thị (lat/lon rỗng, ngoài miền, hoặc sai định dạng).")
         return
 
-    # Fit khung nhìn theo dữ liệu
+    # Fit khung nhìn theo dữ liệu rồi zoom out thêm 1 nấc
     view = vh.compute_view(pts[["lon", "lat"]])
-    view.zoom = min(view.zoom, 16)
+    view.zoom = max(min(view.zoom, 15) - 1, 5)  # lùi 1 cấp; không quá gần, không quá xa
 
     layers = [
         pdk.Layer(
             "ScatterplotLayer",
             data=pts,
-            get_position='[lon, lat]',   # CHÚ Ý: thứ tự [lon, lat]
+            get_position='[lon, lat]',   # CHÚ Ý: [lon, lat]
             get_radius=point_radius,
             get_fill_color='[255, 77, 77, 200]',
             pickable=True,
@@ -262,8 +263,8 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
                 data=pts,
                 get_position='[lon, lat]',
                 get_text=f'[{label_col}]',
-                get_size=16,
-                get_color='[255,255,255,255]',
+                get_size=14,
+                get_color='[0,0,0,255]',  # chữ đen cho nền sáng
                 get_alignment_baseline='"top"',
             )
         )
@@ -272,7 +273,7 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
         layers=layers,
         initial_view_state=view,
         map_provider="carto",         # dùng Carto mặc định (không cần API key)
-        map_style="dark",             # 'dark' | 'light' | 'road' | 'satellite' | ...
+        map_style="light",            # đổi sang nền sáng
         tooltip={"text": "{lat}, {lon}"}
     )
     st.pydeck_chart(deck, use_container_width=True)

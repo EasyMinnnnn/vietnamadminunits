@@ -8,7 +8,7 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 import unicodedata
-from pydeck.data_utils import viewport_helpers as vh  # NEW: dùng để fit viewport
+from pydeck.data_utils import viewport_helpers as vh  # dùng để fit viewport
 
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
@@ -20,7 +20,7 @@ from geocode_tool import Geocoder
 # ================== PAGE ==================
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ================== CSS (giữ nguyên của bạn) ==================
+# ================== CSS ==================
 CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 
@@ -219,21 +219,22 @@ def to_clean_df(obj: Any) -> pd.DataFrame:
     cols = [c for c in order if c in data] + [c for c in data if c not in order]
     return pd.DataFrame([{k: data.get(k) for k in cols}])
 
-# ===== NEW: Chuẩn hoá & vẽ Carto (không cần API)
+# ===== Chuẩn hoá & vẽ Carto (không cần API)
 def _normalize_points(df: pd.DataFrame, lat_col="latitude", lon_col="longitude") -> pd.DataFrame:
     df = df.rename(columns={lat_col: "lat", lon_col: "lon"}).copy()
 
-    # chấp nhận "10,762" hoặc "10.762"
+    # chấp nhận "10,762" hoặc "10.762" -> tách số bằng regex
     for c in ["lat", "lon"]:
         s = df[c].astype(str).str.replace(",", ".", regex=False)
-        df[c] = pd.to_numeric(s.str_extract(r"(-?\d+(?:\.\d+)?)")[0], errors="coerce")
+        s_num = s.str.extract(r"(-?\d+(?:\.\d+)?)", expand=False)  # FIX: .str.extract
+        df[c] = pd.to_numeric(s_num, errors="coerce")
 
     # lọc miền hợp lệ + loại NaN
     df = df[df["lat"].between(-90, 90) & df["lon"].between(-180, 180)]
     return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
 def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
-               label_col=None, point_radius=50):  # nhỏ hơn: 120 -> 50
+               label_col=None, point_radius=50):
     """Hiển thị điểm lên nền Carto 'light' và zoom out nhẹ để nhìn rộng xung quanh."""
     if df is None or df.empty:
         return
@@ -244,13 +245,13 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
 
     # Fit khung nhìn theo dữ liệu rồi zoom out thêm 1 nấc
     view = vh.compute_view(pts[["lon", "lat"]])
-    view.zoom = max(min(view.zoom, 15) - 1, 5)  # lùi 1 cấp; không quá gần, không quá xa
+    view.zoom = max(min(view.zoom, 15) - 1, 5)
 
     layers = [
         pdk.Layer(
             "ScatterplotLayer",
             data=pts,
-            get_position='[lon, lat]',   # CHÚ Ý: [lon, lat]
+            get_position='[lon, lat]',   # [lon, lat]
             get_radius=point_radius,
             get_fill_color='[255, 77, 77, 200]',
             pickable=True,
@@ -272,8 +273,8 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
     deck = pdk.Deck(
         layers=layers,
         initial_view_state=view,
-        map_provider="carto",         # dùng Carto mặc định (không cần API key)
-        map_style="light",            # đổi sang nền sáng
+        map_provider="carto",     # không cần API key
+        map_style="light",        # đổi sang nền sáng
         tooltip={"text": "{lat}, {lon}"}
     )
     st.pydeck_chart(deck, use_container_width=True)

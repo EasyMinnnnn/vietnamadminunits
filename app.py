@@ -336,7 +336,6 @@ if convert_clicked:
             st.success("🔁 Kết quả sau chuẩn hóa (→ 2025)")
             df_converted = to_clean_df(converted)
             st.dataframe(df_converted, use_container_width=True)
-            render_map(df_converted)  # hiển thị điểm
         else:
             st.warning("⚠️ Không chuẩn hóa được địa chỉ.")
     except Exception as e:

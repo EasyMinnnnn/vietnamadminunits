@@ -39,6 +39,18 @@ html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,R
 [data-testid="stSidebar"] > div:first-child{ background:var(--emerald-700); }
 section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
 
+/* Sidebar brand box */
+.brand-box{
+  border:2px solid var(--gold);
+  border-radius:12px;
+  padding:10px 12px;
+  text-align:center;
+  color:var(--gold);
+  font-weight:900;
+  letter-spacing:.6px;
+  margin:6px 8px 14px;
+}
+
 /* Hero */
 .hero{
   position:relative; padding:22px 26px; border-radius:var(--r-xl);
@@ -103,6 +115,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+# ================== SESSION STATE (để giữ map khi chuẩn hóa) ==================
+if "last_points" not in st.session_state:
+    st.session_state["last_points"] = None  # DataFrame có cột latitude, longitude
+
 # ================== HELPERS: load file & chuẩn unicode ==================
 def _score_vn(text: str) -> float:
     """Chấm điểm 'độ Việt hóa' của chuỗi để auto-chọn encoding."""
@@ -152,7 +168,7 @@ def load_table(uploaded, encoding_choice: str = "auto", excel_sheet: Optional[st
     if ext == ".csv":
         return _read_csv_with_fallback(uploaded, encoding_choice)
     elif ext in (".xls", ".xlsx"):
-        return _read_excel(uploaded, excel_sheet)
+        return _read_excel(uploaded, excel_sheet=excel_sheet)
     else:
         raise ValueError("Định dạng không hỗ trợ. Hỗ trợ: CSV, XLS, XLSX.")
 
@@ -164,6 +180,9 @@ def normalize_df_unicode(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ================== SIDEBAR ==================
+# ô TTĐGTS ở đầu sidebar
+st.sidebar.markdown('<div class="brand-box">TTĐGTS</div>', unsafe_allow_html=True)
+
 st.sidebar.header("⚙️ Tùy chọn")
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
 mode = ParseMode[mode_str]
@@ -315,6 +334,7 @@ with c2:
     convert_clicked = st.button("Chuẩn hóa (→ 2025)")
     st.markdown('</div>', unsafe_allow_html=True)
 
+# --- Phân tích địa chỉ (lưu điểm, map sẽ vẽ cuối mục)
 if parse_clicked:
     try:
         parsed = parse_address(address_input, mode=mode, keep_street=keep_street, level=int(level))
@@ -322,13 +342,14 @@ if parse_clicked:
             st.success("🎯 Phân tích thành công")
             df_parsed = to_clean_df(parsed)
             st.dataframe(df_parsed, use_container_width=True)
-            render_map(df_parsed)  # hiển thị điểm
+            st.session_state["last_points"] = df_parsed[["latitude", "longitude"]]
         else:
             st.warning("⚠️ Không phân tích được địa chỉ.")
     except Exception as e:
         st.error(f"❌ Lỗi phân tích: {type(e).__name__}: {e}")
         st.exception(e)
 
+# --- Chuẩn hóa (chỉ bảng, KHÔNG thay đổi map đang có)
 if convert_clicked:
     try:
         converted = convert_address(address_input)
@@ -336,13 +357,14 @@ if convert_clicked:
             st.success("🔁 Kết quả sau chuẩn hóa (→ 2025)")
             df_converted = to_clean_df(converted)
             st.dataframe(df_converted, use_container_width=True)
+            # không ghi đè st.session_state["last_points"]
         else:
             st.warning("⚠️ Không chuẩn hóa được địa chỉ.")
     except Exception as e:
         st.error(f"⚠️ Lỗi khi chuẩn hóa: {type(e).__name__}: {e}")
         st.exception(e)
 
-# ===== Reverse geocode
+# ===== Reverse geocode (lưu điểm, map sẽ vẽ cuối mục)
 with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
     c3, c4, c5 = st.columns([1,1,.6])
     with c3:
@@ -369,12 +391,18 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
                     "formatted": res.get("formatted"),
                 }
                 st.dataframe(pd.DataFrame([show]), use_container_width=True)
-                render_map(pd.DataFrame([{"latitude": show["latitude"], "longitude": show["longitude"]}]))
+                st.session_state["last_points"] = pd.DataFrame(
+                    [{"latitude": show["latitude"], "longitude": show["longitude"]}]
+                )
             else:
                 st.warning("⚠️ Không xác định được xã/phường hoặc OSM thiếu số nhà/đường.")
         except Exception as e:
             st.error(f"❌ Lỗi reverse: {type(e).__name__}: {e}")
             st.exception(e)
+
+# --- VẼ MAP Ở CUỐI MỤC PHÂN TÍCH NHANH: dùng last_points nếu có
+if st.session_state.get("last_points") is not None:
+    render_map(st.session_state["last_points"])
 
 st.markdown('</div>', unsafe_allow_html=True)
 

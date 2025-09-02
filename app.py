@@ -35,8 +35,13 @@ html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,R
 .stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%); color:#F3FBFA; }
 .block-container{ max-width:1180px; padding-top:.75rem; }
 
-/* Sidebar */
-[data-testid="stSidebar"] > div:first-child{ background:var(--emerald-700); }
+/* Sidebar container */
+[data-testid="stSidebar"] > div:first-child{
+  background:var(--emerald-700);
+  padding-top:8px;                 /* đẩy nội dung lên cao */
+}
+
+/* Sidebar headings */
 section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
 
 /* Sidebar brand box */
@@ -48,7 +53,7 @@ section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:
   color:var(--gold);
   font-weight:900;
   letter-spacing:.6px;
-  margin:6px 8px 14px;
+  margin:2px 8px 14px;             /* rất sát mép trên */
 }
 
 /* Hero */
@@ -115,21 +120,19 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ================== SESSION STATE (để giữ map khi chuẩn hóa) ==================
+# ================== SESSION STATE (giữ map khi chuẩn hóa) ==================
 if "last_points" not in st.session_state:
     st.session_state["last_points"] = None  # DataFrame có cột latitude, longitude
 
 # ================== HELPERS: load file & chuẩn unicode ==================
 def _score_vn(text: str) -> float:
-    """Chấm điểm 'độ Việt hóa' của chuỗi để auto-chọn encoding."""
-    vn_chars = "ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ"
+    vn_chars = "ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫẬèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ"
     has_vn = sum(ch in vn_chars for ch in text)
     combining = sum(unicodedata.combining(ch) != 0 for ch in text)
     qmarks = text.count("?")
     return has_vn * 3 + combining * 2 - qmarks * 2
 
 def _read_csv_with_fallback(file, encoding_mode: str = "auto") -> pd.DataFrame:
-    """Auto detect: utf-8-sig → utf-8 → cp1258 → cp1252 → latin1 → utf-16/LE/BE."""
     if encoding_mode and encoding_mode.lower() != "auto":
         file.seek(0)
         return pd.read_csv(file, encoding=encoding_mode)
@@ -168,7 +171,7 @@ def load_table(uploaded, encoding_choice: str = "auto", excel_sheet: Optional[st
     if ext == ".csv":
         return _read_csv_with_fallback(uploaded, encoding_choice)
     elif ext in (".xls", ".xlsx"):
-        return _read_excel(uploaded, excel_name=excel_sheet)
+        return _read_excel(uploaded, sheet_name=excel_sheet)  # ✅ dùng đúng tham số
     else:
         raise ValueError("Định dạng không hỗ trợ. Hỗ trợ: CSV, XLS, XLSX.")
 
@@ -180,7 +183,7 @@ def normalize_df_unicode(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ================== SIDEBAR ==================
-# ô TTĐGTS ở đầu sidebar
+# Ô TTĐGTS ở đầu sidebar
 st.sidebar.markdown('<div class="brand-box">TTĐGTS</div>', unsafe_allow_html=True)
 
 st.sidebar.header("⚙️ Tùy chọn")
@@ -203,9 +206,7 @@ if uploaded is not None:
     ext = Path(uploaded.name).suffix.lower()
     if ext == ".csv":
         encoding_choice = st.sidebar.selectbox(
-            "Encoding (CSV)",
-            ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258", "cp1252"],
-            index=0
+            "Encoding (CSV)", ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258", "cp1252"], index=0
         )
         try:
             df_preview = load_table(uploaded, encoding_choice)
@@ -216,7 +217,7 @@ if uploaded is not None:
             uploaded.seek(0)
             xls = pd.ExcelFile(uploaded)
             excel_sheet = st.sidebar.selectbox("Chọn sheet", xls.sheet_names, index=0)
-            df_preview = load_table(uploaded, excel_sheet=excel_sheet)
+            df_preview = load_table(uploaded, excel_sheet=excel_sheet)  # OK
         except Exception as e:
             st.sidebar.error(f"Lỗi đọc Excel: {e}")
 
@@ -241,28 +242,22 @@ def to_clean_df(obj: Any) -> pd.DataFrame:
 # ===== Chuẩn hoá & vẽ Carto (không cần API)
 def _normalize_points(df: pd.DataFrame, lat_col="latitude", lon_col="longitude") -> pd.DataFrame:
     df = df.rename(columns={lat_col: "lat", lon_col: "lon"}).copy()
-
-    # chấp nhận "10,762" hoặc "10.762" -> tách số bằng regex
     for c in ["lat", "lon"]:
         s = df[c].astype(str).str.replace(",", ".", regex=False)
-        s_num = s.str.extract(r"(-?\d+(?:\.\d+)?)", expand=False)  # FIX: .str.extract
+        s_num = s.str.extract(r"(-?\d+(?:\.\d+)?)", expand=False)
         df[c] = pd.to_numeric(s_num, errors="coerce")
-
-    # lọc miền hợp lệ + loại NaN
     df = df[df["lat"].between(-90, 90) & df["lon"].between(-180, 180)]
     return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
 def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
                label_col=None, point_radius=50):
-    """Hiển thị điểm lên nền Carto 'light' và zoom out nhẹ để nhìn rộng xung quanh."""
     if df is None or df.empty:
         return
     pts = _normalize_points(df, lat_col, lon_col)
     if pts.empty:
-        st.warning("Không có toạ độ hợp lệ để hiển thị (lat/lon rỗng, ngoài miền, hoặc sai định dạng).")
+        st.warning("Không có toạ độ hợp lệ để hiển thị.")
         return
 
-    # Fit khung nhìn theo dữ liệu rồi zoom out thêm 1 nấc
     view = vh.compute_view(pts[["lon", "lat"]])
     view.zoom = max(min(view.zoom, 15) - 1, 5)
 
@@ -270,7 +265,7 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
         pdk.Layer(
             "ScatterplotLayer",
             data=pts,
-            get_position='[lon, lat]',   # [lon, lat]
+            get_position='[lon, lat]',
             get_radius=point_radius,
             get_fill_color='[255, 77, 77, 200]',
             pickable=True,
@@ -284,7 +279,7 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
                 get_position='[lon, lat]',
                 get_text=f'[{label_col}]',
                 get_size=14,
-                get_color='[0,0,0,255]',  # chữ đen cho nền sáng
+                get_color='[0,0,0,255]',
                 get_alignment_baseline='"top"',
             )
         )
@@ -292,8 +287,8 @@ def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
     deck = pdk.Deck(
         layers=layers,
         initial_view_state=view,
-        map_provider="carto",     # không cần API key
-        map_style="light",        # đổi sang nền sáng
+        map_provider="carto",
+        map_style="light",
         tooltip={"text": "{lat}, {lon}"}
     )
     st.pydeck_chart(deck, use_container_width=True)
@@ -334,7 +329,7 @@ with c2:
     convert_clicked = st.button("Chuẩn hóa (→ 2025)")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Phân tích địa chỉ (lưu điểm, map sẽ vẽ cuối mục)
+# --- Phân tích địa chỉ (lưu điểm; map sẽ vẽ phía dưới)
 if parse_clicked:
     try:
         parsed = parse_address(address_input, mode=mode, keep_street=keep_street, level=int(level))
@@ -357,14 +352,13 @@ if convert_clicked:
             st.success("🔁 Kết quả sau chuẩn hóa (→ 2025)")
             df_converted = to_clean_df(converted)
             st.dataframe(df_converted, use_container_width=True)
-            # không ghi đè st.session_state["last_points"]
         else:
             st.warning("⚠️ Không chuẩn hóa được địa chỉ.")
     except Exception as e:
         st.error(f"⚠️ Lỗi khi chuẩn hóa: {type(e).__name__}: {e}")
         st.exception(e)
 
-# ===== Reverse geocode (lưu điểm, map sẽ vẽ cuối mục)
+# ===== Reverse geocode (lưu điểm)
 with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
     c3, c4, c5 = st.columns([1,1,.6])
     with c3:
@@ -400,7 +394,7 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
             st.error(f"❌ Lỗi reverse: {type(e).__name__}: {e}")
             st.exception(e)
 
-# --- VẼ MAP Ở CUỐI MỤC PHÂN TÍCH NHANH: dùng last_points nếu có
+# --- Vẽ map ở cuối phần phân tích nhanh (nếu có điểm)
 if st.session_state.get("last_points") is not None:
     render_map(st.session_state["last_points"])
 

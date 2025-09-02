@@ -8,6 +8,7 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 import unicodedata
+from pydeck.data_utils import viewport_helpers as vh  # NEW: dùng để fit viewport
 
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
@@ -218,26 +219,63 @@ def to_clean_df(obj: Any) -> pd.DataFrame:
     cols = [c for c in order if c in data] + [c for c in data if c not in order]
     return pd.DataFrame([{k: data.get(k) for k in cols}])
 
-def render_map(df: pd.DataFrame):
-    if not {"latitude","longitude"}.issubset(df.columns):
+# ===== NEW: Chuẩn hoá & vẽ Carto (không cần API)
+def _normalize_points(df: pd.DataFrame, lat_col="latitude", lon_col="longitude") -> pd.DataFrame:
+    df = df.rename(columns={lat_col: "lat", lon_col: "lon"}).copy()
+
+    # chấp nhận "10,762" hoặc "10.762"
+    for c in ["lat", "lon"]:
+        s = df[c].astype(str).str.replace(",", ".", regex=False)
+        df[c] = pd.to_numeric(s.str.extract(r"(-?\d+(?:\.\d+)?)")[0], errors="coerce")
+
+    # lọc miền hợp lệ + loại NaN
+    df = df[df["lat"].between(-90, 90) & df["lon"].between(-180, 180)]
+    return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
+
+def render_map(df: pd.DataFrame, lat_col="latitude", lon_col="longitude",
+               label_col=None, point_radius=120):
+    if df is None or df.empty:
         return
-    df = df.copy()
-    if not df["latitude"].notna().any():
+    pts = _normalize_points(df, lat_col, lon_col)
+    if pts.empty:
+        st.warning("Không có toạ độ hợp lệ để hiển thị (lat/lon rỗng, ngoài miền, hoặc sai định dạng).")
         return
-    lat = float(df["latitude"].iloc[0]); lon = float(df["longitude"].iloc[0])
-    try:
-        view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10)
-        style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
-        layer = pdk.Layer(
+
+    # Fit khung nhìn theo dữ liệu
+    view = vh.compute_view(pts[["lon", "lat"]])
+    view.zoom = min(view.zoom, 16)
+
+    layers = [
+        pdk.Layer(
             "ScatterplotLayer",
-            data=df.rename(columns={"latitude":"lat","longitude":"lon"}),
-            get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9
+            data=pts,
+            get_position='[lon, lat]',   # CHÚ Ý: thứ tự [lon, lat]
+            get_radius=point_radius,
+            get_fill_color='[255, 77, 77, 200]',
+            pickable=True,
         )
-        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style),
-                        use_container_width=True)
-    except Exception:
-        # Fallback nếu pydeck/map tiles lỗi
-        st.map(df.rename(columns={"latitude":"lat","longitude":"lon"}), use_container_width=True)
+    ]
+    if label_col and label_col in pts.columns:
+        layers.append(
+            pdk.Layer(
+                "TextLayer",
+                data=pts,
+                get_position='[lon, lat]',
+                get_text=f'[{label_col}]',
+                get_size=16,
+                get_color='[255,255,255,255]',
+                get_alignment_baseline='"top"',
+            )
+        )
+
+    deck = pdk.Deck(
+        layers=layers,
+        initial_view_state=view,
+        map_provider="carto",         # dùng Carto mặc định (không cần API key)
+        map_style="dark",             # 'dark' | 'light' | 'road' | 'satellite' | ...
+        tooltip={"text": "{lat}, {lon}"}
+    )
+    st.pydeck_chart(deck, use_container_width=True)
 
 # ================== GEOCODER LOADER (cache) ==================
 CSV_PATH = "data/interim/legacy_63-province-10040-ward_with_location_and_key.csv"
@@ -282,7 +320,7 @@ if parse_clicked:
             st.success("🎯 Phân tích thành công")
             df_parsed = to_clean_df(parsed)
             st.dataframe(df_parsed, use_container_width=True)
-            render_map(df_parsed)
+            render_map(df_parsed)  # hiển thị điểm
         else:
             st.warning("⚠️ Không phân tích được địa chỉ.")
     except Exception as e:
@@ -296,7 +334,7 @@ if convert_clicked:
             st.success("🔁 Kết quả sau chuẩn hóa (→ 2025)")
             df_converted = to_clean_df(converted)
             st.dataframe(df_converted, use_container_width=True)
-            render_map(df_converted)
+            render_map(df_converted)  # hiển thị điểm
         else:
             st.warning("⚠️ Không chuẩn hóa được địa chỉ.")
     except Exception as e:

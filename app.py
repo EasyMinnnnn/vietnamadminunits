@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
+import unicodedata
 
 from vietnamadminunits import parse_address, convert_address, ParseMode
 from vietnamadminunits.pandas import convert_address_column
@@ -14,10 +15,11 @@ from vietnamadminunits.pandas import convert_address_column
 # ===== Geocoder (OSM + ranh xã)
 from geocode_tool import Geocoder
 
+
 # ================== PAGE ==================
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ================== CSS (inject ONCE, hidden) ==================
+# ================== CSS (giữ nguyên của bạn) ==================
 CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
 
@@ -100,31 +102,45 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ================== HELPERS (file load) ==================
+# ================== HELPERS: load file & chuẩn unicode ==================
+def _score_vn(text: str) -> float:
+    """Chấm điểm 'độ Việt hóa' của chuỗi để auto-chọn encoding."""
+    vn_chars = "ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ"
+    has_vn = sum(ch in vn_chars for ch in text)
+    combining = sum(unicodedata.combining(ch) != 0 for ch in text)
+    qmarks = text.count("?")
+    return has_vn * 3 + combining * 2 - qmarks * 2
+
 def _read_csv_with_fallback(file, encoding_mode: str = "auto") -> pd.DataFrame:
-    """
-    Try encodings in order when encoding_mode == 'auto':
-    utf-8-sig -> utf-8 -> latin1 -> cp1258
-    """
-    tried = []
+    """Auto detect: utf-8-sig → utf-8 → cp1258 → cp1252 → latin1 → utf-16/LE/BE."""
     if encoding_mode and encoding_mode.lower() != "auto":
+        file.seek(0)
         return pd.read_csv(file, encoding=encoding_mode)
 
-    for enc in ("utf-8-sig", "utf-8", "latin1", "cp1258"):
+    candidates = ["utf-8-sig", "utf-8", "cp1258", "cp1252", "latin1", "utf-16", "utf-16-le", "utf-16-be"]
+    best_df, best_score, best_enc = None, -1e9, None
+    errs = []
+    for enc in candidates:
         try:
             file.seek(0)
-            return pd.read_csv(file, encoding=enc)
-        except Exception as e:  # keep trying
-            tried.append(f"{enc}: {e}")
-            continue
-    raise UnicodeDecodeError("utf-8", b"", 0, 1, f"Cannot decode CSV. Tried: {tried}")
+            df = pd.read_csv(file, encoding=enc)
+            sample = "\n".join(
+                df.astype(str).head(5).apply(lambda r: " ".join(map(str, r.values)), axis=1).tolist()
+            )
+            s = _score_vn(sample)
+            if s > best_score:
+                best_df, best_score, best_enc = df, s, enc
+        except Exception as e:
+            errs.append(f"{enc}: {e}")
+    if best_df is None:
+        raise UnicodeDecodeError("utf-8", b"", 0, 1, f"Không decode được CSV. Tried: {errs}")
+    st.session_state["_detected_encoding"] = best_enc
+    return best_df
 
 def _read_excel(file, sheet_name: Optional[str] = None) -> pd.DataFrame:
-    """Read Excel and optionally a specific sheet; default: first sheet."""
     file.seek(0)
     if sheet_name:
         return pd.read_excel(file, sheet_name=sheet_name)
-    # no sheet selected -> first sheet
     xls = pd.ExcelFile(file)
     first = xls.sheet_names[0]
     file.seek(0)
@@ -139,13 +155,22 @@ def load_table(uploaded, encoding_choice: str = "auto", excel_sheet: Optional[st
     else:
         raise ValueError("Định dạng không hỗ trợ. Hỗ trợ: CSV, XLS, XLSX.")
 
+def normalize_df_unicode(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for c in df.columns:
+        df[c] = df[c].astype(str).str.strip()
+        df[c] = df[c].apply(lambda s: unicodedata.normalize("NFC", s))
+    return df
+
 # ================== SIDEBAR ==================
 st.sidebar.header("⚙️ Tùy chọn")
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
 mode = ParseMode[mode_str]
 keep_street = st.sidebar.checkbox("Giữ tên đường", True)
 short_name = st.sidebar.checkbox("Tên rút gọn", True)
-level = st.sidebar.number_input("Level", 1, 3 if mode_str == "LEGACY" else 2, 3 if mode_str == "LEGACY" else 2, step=1)
+level = st.sidebar.number_input("Level", 1, 3 if mode_str == "LEGACY" else 2,
+                                3 if mode_str == "LEGACY" else 2, step=1)
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("Batch (CSV/Excel)")
 
@@ -156,19 +181,16 @@ excel_sheet = None
 
 if uploaded is not None:
     ext = Path(uploaded.name).suffix.lower()
-    # CSV: cho phép chọn encoding
     if ext == ".csv":
         encoding_choice = st.sidebar.selectbox(
             "Encoding (CSV)",
-            ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258"],
-            index=0,
-            help="Nếu lỗi font/UnicodeDecodeError, thử 'latin1' hoặc 'cp1258'."
+            ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258", "cp1252"],
+            index=0
         )
         try:
             df_preview = load_table(uploaded, encoding_choice)
         except Exception as e:
             st.sidebar.error(f"Lỗi đọc CSV: {e}")
-    # Excel: cho phép chọn sheet
     else:
         try:
             uploaded.seek(0)
@@ -179,9 +201,13 @@ if uploaded is not None:
             st.sidebar.error(f"Lỗi đọc Excel: {e}")
 
     if df_preview is not None:
+        df_preview = normalize_df_unicode(df_preview)
+        enc_msg = st.session_state.get("_detected_encoding")
+        if enc_msg:
+            st.sidebar.caption(f"Detected: **{enc_msg}**")
         address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
 
-# ================== HELPERS (render & geocode) ==================
+# ================== HELPERS (render & to df) ==================
 def to_clean_df(obj: Any) -> pd.DataFrame:
     if obj is None:
         return pd.DataFrame()
@@ -198,9 +224,7 @@ def render_map(df: pd.DataFrame):
     df = df.copy()
     if not df["latitude"].notna().any():
         return
-    # lấy điểm đầu tiên để set view
     lat = float(df["latitude"].iloc[0]); lon = float(df["longitude"].iloc[0])
-    # Fallback: nếu không có key hoặc pydeck lỗi -> dùng st.map
     try:
         view = pdk.ViewState(latitude=lat, longitude=lon, zoom=10)
         style = "mapbox://styles/mapbox/dark-v11" if os.getenv("MAPBOX_API_KEY") else None
@@ -209,8 +233,10 @@ def render_map(df: pd.DataFrame):
             data=df.rename(columns={"latitude":"lat","longitude":"lon"}),
             get_position="[lon, lat]", get_radius=220, pickable=True, opacity=0.9
         )
-        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style), use_container_width=True)
+        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view, map_style=style),
+                        use_container_width=True)
     except Exception:
+        # Fallback nếu pydeck/map tiles lỗi
         st.map(df.rename(columns={"latitude":"lat","longitude":"lon"}), use_container_width=True)
 
 # ================== GEOCODER LOADER (cache) ==================
@@ -260,7 +286,8 @@ if parse_clicked:
         else:
             st.warning("⚠️ Không phân tích được địa chỉ.")
     except Exception as e:
-        st.error(f"❌ Lỗi phân tích: {e}")
+        st.error(f"❌ Lỗi phân tích: {type(e).__name__}: {e}")
+        st.exception(e)
 
 if convert_clicked:
     try:
@@ -273,9 +300,10 @@ if convert_clicked:
         else:
             st.warning("⚠️ Không chuẩn hóa được địa chỉ.")
     except Exception as e:
-        st.error(f"⚠️ Lỗi khi chuẩn hóa: {e}")
+        st.error(f"⚠️ Lỗi khi chuẩn hóa: {type(e).__name__}: {e}")
+        st.exception(e)
 
-# ===== Reverse geocode (đặt trong expander nhỏ, không đổi bố cục)
+# ===== Reverse geocode
 with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
     c3, c4, c5 = st.columns([1,1,.6])
     with c3:
@@ -306,7 +334,8 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
             else:
                 st.warning("⚠️ Không xác định được xã/phường hoặc OSM thiếu số nhà/đường.")
         except Exception as e:
-            st.error(f"❌ Lỗi reverse: {e}")
+            st.error(f"❌ Lỗi reverse: {type(e).__name__}: {e}")
+            st.exception(e)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -322,7 +351,6 @@ else:
     run_batch = st.button("⚙️ Chạy chuẩn hóa")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Nút reverse geocode CSV/Excel nếu có cột lat/lon (không phân biệt hoa/thường)
     cols_lower = {c.lower(): c for c in df_preview.columns}
     has_latlon = ("latitude" in cols_lower and "longitude" in cols_lower)
     if has_latlon:
@@ -334,9 +362,11 @@ else:
 
     if run_batch and address_col:
         try:
+            df_in = df_preview.copy()
+            df_in[address_col] = df_in[address_col].astype(str).str.strip()
             with st.spinner("Đang chuẩn hóa..."):
                 df_out = convert_address_column(
-                    df_preview.copy(),
+                    df_in,
                     address=address_col,
                     convert_mode="CONVERT_2025",
                     inplace=False,
@@ -354,7 +384,8 @@ else:
                 "text/csv",
             )
         except Exception as e:
-            st.error(f"❌ Lỗi batch: {e}")
+            st.error(f"❌ Lỗi batch: {type(e).__name__}: {e}")
+            st.exception(e)
 
     if run_rev:
         try:
@@ -389,6 +420,7 @@ else:
                 "text/csv",
             )
         except Exception as e:
-            st.error(f"❌ Lỗi reverse batch: {e}")
+            st.error(f"❌ Lỗi reverse batch: {type(e).__name__}: {e}")
+            st.exception(e)
 
 st.markdown('</div>', unsafe_allow_html=True)

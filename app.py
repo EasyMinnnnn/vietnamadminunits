@@ -99,7 +99,7 @@ st.markdown(CSS, unsafe_allow_html=True)
 # ================== HERO ==================
 st.markdown("""
 <div class="hero">
-  <h1>📍 Công cụ chuyển đổi địa giới hành chính</h1>
+  <h1>📍 Công cụ chuyển đổi địa giới hành chính (TTĐGTS)</h1>
 </div>
 """, unsafe_allow_html=True)
 
@@ -302,8 +302,8 @@ except Exception as e:
 
 # ================== SINGLE ADDRESS ==================
 st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
-st.caption("Ví dụ: 70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
-address_input = st.text_input("Nhập địa chỉ", "70 nguyễn sỹ sách, p.15, Tân Bình, Tp.HCM")
+st.caption("Ví dụ: 263 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội")
+address_input = st.text_input("Nhập địa chỉ", "263 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội")
 
 c1, c2 = st.columns([1,1])
 with c1:

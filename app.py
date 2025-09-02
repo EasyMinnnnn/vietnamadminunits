@@ -168,7 +168,7 @@ def load_table(uploaded, encoding_choice: str = "auto", excel_sheet: Optional[st
     if ext == ".csv":
         return _read_csv_with_fallback(uploaded, encoding_choice)
     elif ext in (".xls", ".xlsx"):
-        return _read_excel(uploaded, excel_sheet=excel_sheet)
+        return _read_excel(uploaded, excel_name=excel_sheet)
     else:
         raise ValueError("Định dạng không hỗ trợ. Hỗ trợ: CSV, XLS, XLSX.")
 

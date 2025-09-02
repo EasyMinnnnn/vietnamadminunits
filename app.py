@@ -302,8 +302,8 @@ except Exception as e:
 
 # ================== SINGLE ADDRESS ==================
 st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
-st.caption("Ví dụ: 263 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội")
-address_input = st.text_input("Nhập địa chỉ", "263 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội")
+st.caption("Ví dụ: 194 Trần Quang Khải, phường Lý Thái Tổ, quận Hoàn Kiếm, Hà Nội")
+address_input = st.text_input("Nhập địa chỉ", "194 Trần Quang Khải, phường Lý Thái Tổ, quận Hoàn Kiếm, Hà Nội")
 
 c1, c2 = st.columns([1,1])
 with c1:

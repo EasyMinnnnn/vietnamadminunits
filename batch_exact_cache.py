@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 import time
 import unicodedata
@@ -12,7 +13,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import pandas as pd
 
 DEFAULT_ERROR_VALUE = "Lỗi định dạng"
-DEFAULT_CACHE_DIR = Path("data/cache")
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "vietnamadminunits"
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "address_conversion_cache.sqlite3"
 
 
@@ -33,38 +34,75 @@ def _resolve_db_path(db_path: Optional[str] = None) -> Path:
     return path
 
 
+def _backup_corrupt_db(path: Path) -> None:
+    if not path.exists():
+        return
+    ts = int(time.time())
+    backup_path = path.with_suffix(path.suffix + f".corrupt.{ts}.bak")
+    try:
+        shutil.move(str(path), str(backup_path))
+    except Exception:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    for suffix in ("-wal", "-shm"):
+        extra = Path(str(path) + suffix)
+        try:
+            extra.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _connect(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, timeout=60)
+    conn.execute("PRAGMA busy_timeout=60000;")
+    conn.execute("PRAGMA journal_mode=DELETE;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
+
 def ensure_cache_schema(db_path: Optional[str] = None) -> Path:
     path = _resolve_db_path(db_path)
-    with sqlite3.connect(path) as conn:
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS address_conversion_cache (
-                normalized_address TEXT PRIMARY KEY,
-                converted_address TEXT,
-                status TEXT NOT NULL,
-                error_message TEXT,
-                used_geocoder INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS geocode_cache (
-                query_address TEXT PRIMARY KEY,
-                latitude REAL,
-                longitude REAL,
-                provider TEXT,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_address_conversion_status ON address_conversion_cache(status)")
-        conn.commit()
+    for attempt in range(2):
+        try:
+            with _connect(path) as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS address_conversion_cache (
+                        normalized_address TEXT PRIMARY KEY,
+                        converted_address TEXT,
+                        status TEXT NOT NULL,
+                        error_message TEXT,
+                        used_geocoder INTEGER NOT NULL DEFAULT 0,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS geocode_cache (
+                        query_address TEXT PRIMARY KEY,
+                        latitude REAL,
+                        longitude REAL,
+                        provider TEXT,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_address_conversion_status "
+                    "ON address_conversion_cache(status)"
+                )
+                conn.commit()
+            return path
+        except sqlite3.DatabaseError as exc:
+            if attempt == 0 and "malformed" in str(exc).lower():
+                _backup_corrupt_db(path)
+                continue
+            raise
     return path
 
 
@@ -78,26 +116,36 @@ def load_cached_results(addresses: Sequence[str], db_path: Optional[str] = None)
         return {}
     path = ensure_cache_schema(db_path)
     results: Dict[str, Dict[str, object]] = {}
-    with sqlite3.connect(path) as conn:
-        conn.row_factory = sqlite3.Row
-        for chunk in _chunked(list(addresses), size=900):
-            placeholders = ",".join(["?"] * len(chunk))
-            rows = conn.execute(
-                f"""
-                SELECT normalized_address, converted_address, status, error_message, used_geocoder
-                FROM address_conversion_cache
-                WHERE normalized_address IN ({placeholders})
-                """,
-                list(chunk),
-            ).fetchall()
-            for row in rows:
-                results[row["normalized_address"]] = {
-                    "converted_address": row["converted_address"],
-                    "status": row["status"],
-                    "error_message": row["error_message"],
-                    "used_geocoder": int(row["used_geocoder"] or 0),
-                    "cache_source": "sqlite_cache",
-                }
+    for attempt in range(2):
+        try:
+            with _connect(path) as conn:
+                conn.row_factory = sqlite3.Row
+                for chunk in _chunked(list(addresses), size=900):
+                    placeholders = ",".join(["?"] * len(chunk))
+                    rows = conn.execute(
+                        f"""
+                        SELECT normalized_address, converted_address, status, error_message, used_geocoder
+                        FROM address_conversion_cache
+                        WHERE normalized_address IN ({placeholders})
+                        """,
+                        list(chunk),
+                    ).fetchall()
+                    for row in rows:
+                        results[row["normalized_address"]] = {
+                            "converted_address": row["converted_address"],
+                            "status": row["status"],
+                            "error_message": row["error_message"],
+                            "used_geocoder": int(row["used_geocoder"] or 0),
+                            "cache_source": "sqlite_cache",
+                        }
+            return results
+        except sqlite3.DatabaseError as exc:
+            if attempt == 0 and "malformed" in str(exc).lower():
+                _backup_corrupt_db(path)
+                path = ensure_cache_schema(str(path))
+                results = {}
+                continue
+            raise
     return results
 
 
@@ -118,25 +166,32 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
         )
         for r in records
     ]
-    with sqlite3.connect(path) as conn:
-        conn.execute("PRAGMA journal_mode=WAL;")
-        conn.execute("PRAGMA synchronous=NORMAL;")
-        conn.executemany(
-            """
-            INSERT INTO address_conversion_cache (
-                normalized_address, converted_address, status, error_message,
-                used_geocoder, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(normalized_address) DO UPDATE SET
-                converted_address=excluded.converted_address,
-                status=excluded.status,
-                error_message=excluded.error_message,
-                used_geocoder=excluded.used_geocoder,
-                updated_at=excluded.updated_at
-            """,
-            rows,
-        )
-        conn.commit()
+    for attempt in range(2):
+        try:
+            with _connect(path) as conn:
+                conn.executemany(
+                    """
+                    INSERT INTO address_conversion_cache (
+                        normalized_address, converted_address, status, error_message,
+                        used_geocoder, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(normalized_address) DO UPDATE SET
+                        converted_address=excluded.converted_address,
+                        status=excluded.status,
+                        error_message=excluded.error_message,
+                        used_geocoder=excluded.used_geocoder,
+                        updated_at=excluded.updated_at
+                    """,
+                    rows,
+                )
+                conn.commit()
+            return
+        except sqlite3.DatabaseError as exc:
+            if attempt == 0 and "malformed" in str(exc).lower():
+                _backup_corrupt_db(path)
+                path = ensure_cache_schema(str(path))
+                continue
+            raise
 
 
 def _convert_address_chunk(args: Tuple[List[str], bool, str]) -> List[Dict[str, object]]:
@@ -223,10 +278,7 @@ def convert_unique_addresses(
         return results, stats
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = [
-            executor.submit(_convert_address_chunk, (chunk, short_name, error_value))
-            for chunk in chunks
-        ]
+        futures = [executor.submit(_convert_address_chunk, (chunk, short_name, error_value)) for chunk in chunks]
         for future in as_completed(futures):
             rows = future.result()
             upsert_cached_results(rows, db_path=db_path)

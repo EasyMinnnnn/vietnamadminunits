@@ -1,7 +1,9 @@
 import json
+import sqlite3
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 MODULE_DIR = Path(__file__).parent.parent
 
@@ -13,7 +15,6 @@ else:
     from ..parser import parse_address, ParseMode
     from ..parser.utils import get_geo_location, check_point_in_polygon, find_nearest_point
 
-
 with open(MODULE_DIR / 'data/converter_2025.json', 'r', encoding='utf-8') as f:
     converter_data = json.load(f)
 
@@ -22,7 +23,6 @@ DICT_PROVINCE_WARD_NO_DIVIDED = converter_data['DICT_PROVINCE_WARD_NO_DIVIDED']
 DICT_PROVINCE_WARD_DIVIDED = converter_data['DICT_PROVINCE_WARD_DIVIDED']
 SPECIAL_ZONE = {'huyenbachlongvi', 'huyenconco', 'huyenhoangsa', 'huyenlyson', 'huyencondao'}
 
-# Reverse maps to avoid repeated linear scans on every single address.
 OLD_PROVINCE_KEY_TO_NEW_PROVINCE_KEY = {}
 for new_province_key, old_province_keys in DICT_PROVINCE.items():
     for old_key in old_province_keys:
@@ -36,14 +36,77 @@ for new_province_key, ward_map in DICT_PROVINCE_WARD_NO_DIVIDED.items():
             reverse_map.setdefault(old_key, new_ward_key)
     NO_DIVIDED_REVERSE_MAP[new_province_key] = reverse_map
 
-DIVIDED_REVERSE_MAP = {}
-for new_province_key, ward_map in DICT_PROVINCE_WARD_DIVIDED.items():
-    DIVIDED_REVERSE_MAP[new_province_key] = dict(ward_map)
+DIVIDED_REVERSE_MAP = {
+    new_province_key: dict(ward_map)
+    for new_province_key, ward_map in DICT_PROVINCE_WARD_DIVIDED.items()
+}
+
+
+@lru_cache(maxsize=50000)
+def _get_shared_cache_db_path() -> Optional[str]:
+    try:
+        from batch_exact_cache import ensure_cache_schema, DEFAULT_CACHE_DB
+        return str(ensure_cache_schema(str(DEFAULT_CACHE_DB)))
+    except Exception:
+        return None
+
+
+def _read_geo_cache(address: str) -> Optional[tuple]:
+    db_path = _get_shared_cache_db_path()
+    if not db_path or not address:
+        return None
+    try:
+        with sqlite3.connect(db_path, timeout=30) as conn:
+            row = conn.execute(
+                "SELECT latitude, longitude FROM geocode_cache WHERE query_address = ?",
+                (address,),
+            ).fetchone()
+            if row:
+                return float(row[0]), float(row[1])
+    except Exception:
+        return None
+    return None
+
+
+def _write_geo_cache(address: str, latitude: float, longitude: float) -> None:
+    db_path = _get_shared_cache_db_path()
+    if not db_path or not address:
+        return
+    try:
+        with sqlite3.connect(db_path, timeout=30) as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute(
+                """
+                INSERT INTO geocode_cache (query_address, latitude, longitude, provider, created_at, updated_at)
+                VALUES (?, ?, ?, 'app_converter', strftime('%s','now'), strftime('%s','now'))
+                ON CONFLICT(query_address) DO UPDATE SET
+                    latitude=excluded.latitude,
+                    longitude=excluded.longitude,
+                    updated_at=excluded.updated_at
+                """,
+                (address, latitude, longitude),
+            )
+            conn.commit()
+    except Exception:
+        return
 
 
 @lru_cache(maxsize=50000)
 def _get_geo_location_cached(address: str):
-    return get_geo_location(address)
+    cached = _read_geo_cache(address)
+    if cached is not None:
+        class GeoResult:
+            latitude = cached[0]
+            longitude = cached[1]
+        return GeoResult()
+    result = get_geo_location(address)
+    if result is not None:
+        try:
+            _write_geo_cache(address, float(result.latitude), float(result.longitude))
+        except Exception:
+            pass
+    return result
 
 
 def _resolve_new_ward_key(old_unit, new_province_key: str):
@@ -67,8 +130,6 @@ def _resolve_new_ward_key(old_unit, new_province_key: str):
     if not old_unit.street:
         return next((ward['newWardKey'] for ward in new_wards if ward['isDefaultNewWard']), None), False
 
-    # Accuracy-preserving branch: keep the original geocoder-based choice,
-    # but cache geocoder responses for repeated street addresses.
     old_location = _get_geo_location_cached(old_unit.get_address())
     old_point = (old_location.latitude, old_location.longitude)
 

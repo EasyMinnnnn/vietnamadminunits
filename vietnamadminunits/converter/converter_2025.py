@@ -1,9 +1,7 @@
 import json
-import sqlite3
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 MODULE_DIR = Path(__file__).parent.parent
 
@@ -43,70 +41,8 @@ DIVIDED_REVERSE_MAP = {
 
 
 @lru_cache(maxsize=50000)
-def _get_shared_cache_db_path() -> Optional[str]:
-    try:
-        from batch_exact_cache import ensure_cache_schema, DEFAULT_CACHE_DB
-        return str(ensure_cache_schema(str(DEFAULT_CACHE_DB)))
-    except Exception:
-        return None
-
-
-def _read_geo_cache(address: str) -> Optional[tuple]:
-    db_path = _get_shared_cache_db_path()
-    if not db_path or not address:
-        return None
-    try:
-        with sqlite3.connect(db_path, timeout=30) as conn:
-            row = conn.execute(
-                "SELECT latitude, longitude FROM geocode_cache WHERE query_address = ?",
-                (address,),
-            ).fetchone()
-            if row:
-                return float(row[0]), float(row[1])
-    except Exception:
-        return None
-    return None
-
-
-def _write_geo_cache(address: str, latitude: float, longitude: float) -> None:
-    db_path = _get_shared_cache_db_path()
-    if not db_path or not address:
-        return
-    try:
-        with sqlite3.connect(db_path, timeout=30) as conn:
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA synchronous=NORMAL;")
-            conn.execute(
-                """
-                INSERT INTO geocode_cache (query_address, latitude, longitude, provider, created_at, updated_at)
-                VALUES (?, ?, ?, 'app_converter', strftime('%s','now'), strftime('%s','now'))
-                ON CONFLICT(query_address) DO UPDATE SET
-                    latitude=excluded.latitude,
-                    longitude=excluded.longitude,
-                    updated_at=excluded.updated_at
-                """,
-                (address, latitude, longitude),
-            )
-            conn.commit()
-    except Exception:
-        return
-
-
-@lru_cache(maxsize=50000)
 def _get_geo_location_cached(address: str):
-    cached = _read_geo_cache(address)
-    if cached is not None:
-        class GeoResult:
-            latitude = cached[0]
-            longitude = cached[1]
-        return GeoResult()
-    result = get_geo_location(address)
-    if result is not None:
-        try:
-            _write_geo_cache(address, float(result.latitude), float(result.longitude))
-        except Exception:
-            pass
-    return result
+    return get_geo_location(address)
 
 
 def _resolve_new_ward_key(old_unit, new_province_key: str):

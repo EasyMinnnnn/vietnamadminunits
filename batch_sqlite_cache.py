@@ -17,7 +17,6 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "address_conversion_cache.sqlite3"
 
 
 def normalize_address_value(value: object) -> str:
-    """Normalize only the address text used for conversion/cache lookup."""
     if value is None:
         return ""
     text = str(value)
@@ -53,15 +52,25 @@ def ensure_cache_schema(db_path: Optional[str] = None) -> Path:
             """
         )
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_address_conversion_status ON address_conversion_cache(status)"
+            """
+            CREATE TABLE IF NOT EXISTS geocode_cache (
+                query_address TEXT PRIMARY KEY,
+                latitude REAL,
+                longitude REAL,
+                provider TEXT,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
         )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_address_conversion_status ON address_conversion_cache(status)")
         conn.commit()
     return path
 
 
 def _chunked(items: Sequence[str], size: int = 900) -> Iterable[Sequence[str]]:
     for start in range(0, len(items), size):
-        yield items[start : start + size]
+        yield items[start:start + size]
 
 
 def load_cached_results(addresses: Sequence[str], db_path: Optional[str] = None) -> Dict[str, Dict[str, object]]:
@@ -130,42 +139,46 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
         conn.commit()
 
 
-def _convert_single_address(args: Tuple[str, bool, str]) -> Dict[str, object]:
-    normalized_address, short_name, error_value = args
-    try:
-        from vietnamadminunits import convert_address
+def _convert_address_chunk(args: Tuple[List[str], bool, str]) -> List[Dict[str, object]]:
+    addresses, short_name, error_value = args
+    from vietnamadminunits import convert_address
 
-        if not normalized_address:
-            return {
+    output: List[Dict[str, object]] = []
+    for normalized_address in addresses:
+        try:
+            if not normalized_address:
+                output.append({
+                    "normalized_address": normalized_address,
+                    "converted_address": error_value,
+                    "status": "invalid_format",
+                    "error_message": "empty_address",
+                    "used_geocoder": 0,
+                    "cache_source": "computed",
+                })
+                continue
+
+            converted = convert_address(normalized_address)
+            used_geocoder = int(getattr(converted, "_used_geocoder", False))
+            converted_address = converted.get_address(short_name=short_name) if converted else error_value
+            status = "computed" if converted else "invalid_format"
+            output.append({
+                "normalized_address": normalized_address,
+                "converted_address": converted_address,
+                "status": status,
+                "error_message": None if converted else "convert_returned_none",
+                "used_geocoder": used_geocoder,
+                "cache_source": "computed",
+            })
+        except Exception as exc:
+            output.append({
                 "normalized_address": normalized_address,
                 "converted_address": error_value,
                 "status": "invalid_format",
-                "error_message": "empty_address",
+                "error_message": f"{type(exc).__name__}: {exc}",
                 "used_geocoder": 0,
                 "cache_source": "computed",
-            }
-
-        converted = convert_address(normalized_address)
-        used_geocoder = int(getattr(converted, "_used_geocoder", False))
-        converted_address = converted.get_address(short_name=short_name) if converted else error_value
-        status = "computed" if converted else "invalid_format"
-        return {
-            "normalized_address": normalized_address,
-            "converted_address": converted_address,
-            "status": status,
-            "error_message": None if converted else "convert_returned_none",
-            "used_geocoder": used_geocoder,
-            "cache_source": "computed",
-        }
-    except Exception as exc:  # pragma: no cover - defensive batch path
-        return {
-            "normalized_address": normalized_address,
-            "converted_address": error_value,
-            "status": "invalid_format",
-            "error_message": f"{type(exc).__name__}: {exc}",
-            "used_geocoder": 0,
-            "cache_source": "computed",
-        }
+            })
+    return output
 
 
 def convert_unique_addresses(
@@ -175,6 +188,7 @@ def convert_unique_addresses(
     error_value: str = DEFAULT_ERROR_VALUE,
     max_workers: Optional[int] = None,
     db_path: Optional[str] = None,
+    chunk_size: int = 300,
 ) -> Tuple[Dict[str, Dict[str, object]], Dict[str, int]]:
     unique_addresses = list(dict.fromkeys(addresses))
     cached = load_cached_results(unique_addresses, db_path=db_path)
@@ -193,30 +207,36 @@ def convert_unique_addresses(
         return results, stats
 
     workers = max(1, int(max_workers or max(1, min((os.cpu_count() or 2) - 1, 4))))
+    chunk_size = max(50, int(chunk_size))
+    chunks: List[List[str]] = [list(chunk) for chunk in _chunked(misses, size=chunk_size)]
 
-    computed_rows: List[Dict[str, object]] = []
-    if workers == 1:
-        for addr in misses:
-            row = _convert_single_address((addr, short_name, error_value))
-            results[addr] = row
-            computed_rows.append(row)
-    else:
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_convert_single_address, (addr, short_name, error_value)): addr
-                for addr in misses
-            }
-            for future in as_completed(futures):
-                row = future.result()
+    if workers == 1 or len(chunks) == 1:
+        for chunk in chunks:
+            rows = _convert_address_chunk((chunk, short_name, error_value))
+            upsert_cached_results(rows, db_path=db_path)
+            for row in rows:
                 addr = str(row["normalized_address"])
                 results[addr] = row
-                computed_rows.append(row)
+                stats["computed"] += 1
+                stats["invalid"] += int(row.get("status") != "computed")
+                stats["used_geocoder"] += int(row.get("used_geocoder") or 0)
+        return results, stats
 
-    upsert_cached_results(computed_rows, db_path=db_path)
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(_convert_address_chunk, (chunk, short_name, error_value))
+            for chunk in chunks
+        ]
+        for future in as_completed(futures):
+            rows = future.result()
+            upsert_cached_results(rows, db_path=db_path)
+            for row in rows:
+                addr = str(row["normalized_address"])
+                results[addr] = row
+                stats["computed"] += 1
+                stats["invalid"] += int(row.get("status") != "computed")
+                stats["used_geocoder"] += int(row.get("used_geocoder") or 0)
 
-    stats["computed"] = len(computed_rows)
-    stats["invalid"] = sum(1 for r in computed_rows if r.get("status") != "computed")
-    stats["used_geocoder"] = sum(int(r.get("used_geocoder") or 0) for r in computed_rows)
     return results, stats
 
 
@@ -229,6 +249,7 @@ def convert_dataframe_address_column(
     max_workers: Optional[int] = None,
     db_path: Optional[str] = None,
     output_prefix: str = "converted_",
+    chunk_size: int = 300,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     started = time.time()
     df_out = df.copy()
@@ -247,6 +268,7 @@ def convert_dataframe_address_column(
         error_value=error_value,
         max_workers=max_workers,
         db_path=db_path,
+        chunk_size=chunk_size,
     )
 
     df_out[converted_col] = df_out[normalized_col].map(lambda x: result_map.get(x, {}).get("converted_address", error_value))

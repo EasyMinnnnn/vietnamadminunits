@@ -13,7 +13,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import pandas as pd
 
 DEFAULT_ERROR_VALUE = "Lỗi định dạng"
-DEFAULT_CACHE_DIR = Path.home() / ".cache" / "vietnamadminunits"
+DEFAULT_CACHE_DIR = Path("/tmp")
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "address_conversion_cache.sqlite3"
 
 
@@ -102,7 +102,9 @@ def ensure_cache_schema(db_path: Optional[str] = None) -> Path:
             if attempt == 0 and "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
                 continue
-            raise
+            _backup_corrupt_db(path)
+            break
+    # Best-effort cache: if SQLite is unusable, caller can still continue without cache.
     return path
 
 
@@ -142,10 +144,13 @@ def load_cached_results(addresses: Sequence[str], db_path: Optional[str] = None)
         except sqlite3.DatabaseError as exc:
             if attempt == 0 and "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
-                path = ensure_cache_schema(str(path))
+                try:
+                    path = ensure_cache_schema(str(path))
+                except Exception:
+                    pass
                 results = {}
                 continue
-            raise
+            return {}
     return results
 
 
@@ -189,9 +194,12 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
         except sqlite3.DatabaseError as exc:
             if attempt == 0 and "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
-                path = ensure_cache_schema(str(path))
+                try:
+                    path = ensure_cache_schema(str(path))
+                except Exception:
+                    pass
                 continue
-            raise
+            return
 
 
 def _convert_address_chunk(args: Tuple[List[str], bool, str]) -> List[Dict[str, object]]:

@@ -8,13 +8,15 @@ import time
 import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
 DEFAULT_ERROR_VALUE = "Lỗi định dạng"
-DEFAULT_CACHE_DIR = Path("/tmp")
+DEFAULT_CACHE_DIR = Path("/tmp/vietnamadminunits_cache")
 DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "address_conversion_cache.sqlite3"
+
+ProgressCallback = Callable[[Dict[str, float]], None]
 
 
 def normalize_address_value(value: object) -> str:
@@ -102,9 +104,7 @@ def ensure_cache_schema(db_path: Optional[str] = None) -> Path:
             if attempt == 0 and "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
                 continue
-            _backup_corrupt_db(path)
-            break
-    # Best-effort cache: if SQLite is unusable, caller can still continue without cache.
+            raise
     return path
 
 
@@ -142,7 +142,7 @@ def load_cached_results(addresses: Sequence[str], db_path: Optional[str] = None)
                         }
             return results
         except sqlite3.DatabaseError as exc:
-            if attempt == 0 and "malformed" in str(exc).lower():
+            if "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
                 try:
                     path = ensure_cache_schema(str(path))
@@ -151,7 +151,7 @@ def load_cached_results(addresses: Sequence[str], db_path: Optional[str] = None)
                 results = {}
                 continue
             return {}
-    return results
+    return {}
 
 
 def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optional[str] = None) -> None:
@@ -192,7 +192,7 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
                 conn.commit()
             return
         except sqlite3.DatabaseError as exc:
-            if attempt == 0 and "malformed" in str(exc).lower():
+            if "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
                 try:
                     path = ensure_cache_schema(str(path))
@@ -200,6 +200,7 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
                     pass
                 continue
             return
+    return
 
 
 def _convert_address_chunk(args: Tuple[List[str], bool, str]) -> List[Dict[str, object]]:
@@ -244,6 +245,29 @@ def _convert_address_chunk(args: Tuple[List[str], bool, str]) -> List[Dict[str, 
     return output
 
 
+def _emit_progress(
+    *,
+    progress_callback: Optional[ProgressCallback],
+    stats: Dict[str, int],
+    started_at: float,
+) -> None:
+    if progress_callback is None:
+        return
+    processed_unique = int(stats["cache_hits"] + stats["computed"])
+    total_unique = int(stats["unique_total"])
+    payload = {
+        "unique_total": total_unique,
+        "processed_unique": processed_unique,
+        "remaining_unique": max(0, total_unique - processed_unique),
+        "cache_hits": int(stats["cache_hits"]),
+        "computed": int(stats["computed"]),
+        "invalid": int(stats["invalid"]),
+        "used_geocoder": int(stats["used_geocoder"]),
+        "elapsed_seconds": round(time.time() - started_at, 2),
+    }
+    progress_callback(payload)
+
+
 def convert_unique_addresses(
     addresses: Sequence[str],
     *,
@@ -252,7 +276,9 @@ def convert_unique_addresses(
     max_workers: Optional[int] = None,
     db_path: Optional[str] = None,
     chunk_size: int = 300,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> Tuple[Dict[str, Dict[str, object]], Dict[str, int]]:
+    started_at = time.time()
     unique_addresses = list(dict.fromkeys(addresses))
     cached = load_cached_results(unique_addresses, db_path=db_path)
     misses = [addr for addr in unique_addresses if addr not in cached]
@@ -265,6 +291,7 @@ def convert_unique_addresses(
         "invalid": 0,
         "used_geocoder": 0,
     }
+    _emit_progress(progress_callback=progress_callback, stats=stats, started_at=started_at)
 
     if not misses:
         return results, stats
@@ -283,6 +310,7 @@ def convert_unique_addresses(
                 stats["computed"] += 1
                 stats["invalid"] += int(row.get("status") != "computed")
                 stats["used_geocoder"] += int(row.get("used_geocoder") or 0)
+            _emit_progress(progress_callback=progress_callback, stats=stats, started_at=started_at)
         return results, stats
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
@@ -296,6 +324,7 @@ def convert_unique_addresses(
                 stats["computed"] += 1
                 stats["invalid"] += int(row.get("status") != "computed")
                 stats["used_geocoder"] += int(row.get("used_geocoder") or 0)
+            _emit_progress(progress_callback=progress_callback, stats=stats, started_at=started_at)
 
     return results, stats
 
@@ -310,6 +339,7 @@ def convert_dataframe_address_column(
     db_path: Optional[str] = None,
     output_prefix: str = "converted_",
     chunk_size: int = 300,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     started = time.time()
     df_out = df.copy()
@@ -329,6 +359,7 @@ def convert_dataframe_address_column(
         max_workers=max_workers,
         db_path=db_path,
         chunk_size=chunk_size,
+        progress_callback=progress_callback,
     )
 
     df_out[converted_col] = df_out[normalized_col].map(lambda x: result_map.get(x, {}).get("converted_address", error_value))

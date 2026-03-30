@@ -17,18 +17,12 @@ from batch_exact_cache import (
     ensure_cache_schema,
     normalize_address_value,
 )
-
-# ===== Geocoder (OSM + ranh xã)
 from geocode_tool import Geocoder
 
-
-# ================== PAGE ==================
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-# ================== CSS ==================
 CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
-
 :root{
   --gold:#D4AF37; --gold-hi:#FFD700;
   --emerald-900:#083D3B; --emerald-800:#0A4D4A; --emerald-700:#0E6963; --emerald:#066E68;
@@ -41,74 +35,28 @@ html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,R
 .block-container{ max-width:1180px; padding-top:.75rem; }
 [data-testid="stSidebar"] > div:first-child{ background:var(--emerald-700); padding-top:8px; }
 section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
-.brand-box{
-  border:2px solid var(--gold); border-radius:12px; padding:10px 12px; text-align:center;
-  color:var(--gold); font-weight:900; letter-spacing:.6px; margin:2px 8px 14px;
-}
-.hero{
-  position:relative; padding:22px 26px; border-radius:var(--r-xl);
-  background:linear-gradient(135deg, #0F7B74 0%, var(--emerald-700) 55%, var(--emerald-800) 100%);
-  border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px; overflow:hidden;
-}
-.hero:before{
-  content:""; position:absolute; inset:0;
-  background: linear-gradient(120deg, transparent 0 60%, rgba(255,255,255,.05) 62%, transparent 64%);
-  pointer-events:none;
-}
-.hero:after{
-  content:""; position:absolute; left:22px; right:22px; top:10px; height:8px;
-  background:linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius:10px;
-}
+.brand-box{ border:2px solid var(--gold); border-radius:12px; padding:10px 12px; text-align:center; color:var(--gold); font-weight:900; letter-spacing:.6px; margin:2px 8px 14px; }
+.hero{ position:relative; padding:22px 26px; border-radius:var(--r-xl); background:linear-gradient(135deg, #0F7B74 0%, var(--emerald-700) 55%, var(--emerald-800) 100%); border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px; overflow:hidden; }
+.hero:before{ content:""; position:absolute; inset:0; background: linear-gradient(120deg, transparent 0 60%, rgba(255,255,255,.05) 62%, transparent 64%); pointer-events:none; }
+.hero:after{ content:""; position:absolute; left:22px; right:22px; top:10px; height:8px; background:linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius:10px; }
 .hero h1{ margin:.55rem 0 .3rem; font-weight:900; letter-spacing:.2px; color:var(--gold); }
 .hero p{ margin:0; color:#CFE7E5; }
-.card{
-  background:var(--panel); border:1px solid var(--panel-bd); border-radius:var(--r-lg);
-  box-shadow:var(--shadow); padding:14px 16px; margin-bottom:14px; backdrop-filter:blur(6px);
-}
-.card .card-title{
-  display:flex; gap:10px; align-items:center; font-weight:800; color:var(--gold); margin-bottom:8px;
-}
-.badge{
-  display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
-  border-radius:999px; background:var(--emerald);
-}
-.stTextInput input, .stSelectbox div[data-baseweb="select"]>div, .stTextArea textarea, .stNumberInput input{
-  background:#fff !important; color:#111 !important; height:44px;
-  border-radius:12px !important; border:1px solid #E5E7EB !important;
-}
-.stButton > button{
-  border:0; border-radius:12px; padding:10px 16px; font-weight:800;
-  box-shadow:0 6px 16px rgba(0,0,0,.18); transition:transform .05s, filter .15s;
-}
-.btn-primary > button{
-  background:linear-gradient(90deg, var(--gold), var(--gold-hi)) !important; color:#111 !important;
-}
-.btn-ghost > button{
-  background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none;
-}
-.stButton > button:hover{ filter:brightness(.97); }
-.stButton > button:active{ transform:translateY(1px); }
-[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{
-  background:var(--emerald) !important; color:var(--gold) !important; font-weight:800 !important;
-  border-bottom:2px solid var(--gold) !important;
-}
-.stDataFrame{
-  border:1.6px solid color-mix(in srgb, var(--gold) 58%, transparent);
-  border-radius:12px; overflow:hidden;
-}
+.card{ background:var(--panel); border:1px solid var(--panel-bd); border-radius:var(--r-lg); box-shadow:var(--shadow); padding:14px 16px; margin-bottom:14px; backdrop-filter:blur(6px); }
+.card .card-title{ display:flex; gap:10px; align-items:center; font-weight:800; color:var(--gold); margin-bottom:8px; }
+.badge{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:999px; background:var(--emerald); }
+.stTextInput input, .stSelectbox div[data-baseweb="select"]>div, .stTextArea textarea, .stNumberInput input{ background:#fff !important; color:#111 !important; height:44px; border-radius:12px !important; border:1px solid #E5E7EB !important; }
+.stButton > button{ border:0; border-radius:12px; padding:10px 16px; font-weight:800; box-shadow:0 6px 16px rgba(0,0,0,.18); transition:transform .05s, filter .15s; }
+.btn-primary > button{ background:linear-gradient(90deg, var(--gold), var(--gold-hi)) !important; color:#111 !important; }
+.btn-ghost > button{ background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none; }
+.stButton > button:hover{ filter:brightness(.97); } .stButton > button:active{ transform:translateY(1px); }
+[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{ background:var(--emerald) !important; color:var(--gold) !important; font-weight:800 !important; border-bottom:2px solid var(--gold) !important; }
+.stDataFrame{ border:1.6px solid color-mix(in srgb, var(--gold) 58%, transparent); border-radius:12px; overflow:hidden; }
 .stDataFrame tbody td{ border-bottom:1px solid rgba(255,255,255,.08) !important; }
 .stAlert{ border-radius:12px; }
-.stAlert.success{
-  background:rgba(212,175,55,.10) !important; border-left:5px solid var(--gold) !important;
-}
-.pydeck_chart, .stDeckGlJsonChart{
-  border-radius:12px; overflow:hidden;
-  border:1px solid color-mix(in srgb, var(--gold) 35%, transparent);
-}
+.pydeck_chart, .stDeckGlJsonChart{ border-radius:12px; overflow:hidden; border:1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
 h2, h3{ letter-spacing:.1px; }
 </style>"""
 st.markdown(CSS, unsafe_allow_html=True)
-
 st.markdown("""
 <div class="hero">
   <h1>📍Công cụ chuyển đổi địa giới hành chính</h1>
@@ -131,7 +79,6 @@ def _read_csv_with_fallback(file, encoding_mode: str = "auto") -> pd.DataFrame:
     if encoding_mode and encoding_mode.lower() != "auto":
         file.seek(0)
         return pd.read_csv(file, encoding=encoding_mode)
-
     candidates = ["utf-8-sig", "utf-8", "cp1258", "cp1252", "latin1", "utf-16", "utf-16-le", "utf-16-be"]
     best_df, best_score, best_enc = None, -1e9, None
     errs = []
@@ -180,12 +127,7 @@ def to_clean_df(obj: Any) -> pd.DataFrame:
     if obj is None:
         return pd.DataFrame()
     data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items() if not k.startswith("_") and v is not None}
-    order = [
-        "province", "district", "ward", "street",
-        "short_province", "short_district", "short_ward",
-        "province_type", "district_type", "ward_type",
-        "latitude", "longitude",
-    ]
+    order = ["province", "district", "ward", "street", "short_province", "short_district", "short_ward", "province_type", "district_type", "ward_type", "latitude", "longitude"]
     cols = [c for c in order if c in data] + [c for c in data if c not in order]
     return pd.DataFrame([{k: data.get(k) for k in cols}])
 
@@ -231,13 +173,7 @@ def render_map(df: pd.DataFrame, lat_col: str = "latitude", lon_col: str = "long
                 get_alignment_baseline='"top"',
             )
         )
-    deck = pdk.Deck(
-        layers=layers,
-        initial_view_state=view,
-        map_provider="carto",
-        map_style="light",
-        tooltip={"text": "{lat}, {lon}"},
-    )
+    deck = pdk.Deck(layers=layers, initial_view_state=view, map_provider="carto", map_style="light", tooltip={"text": "{lat}, {lon}"})
     st.pydeck_chart(deck, use_container_width=True)
 
 
@@ -269,11 +205,11 @@ st.sidebar.subheader("Batch (CSV/Excel)")
 max_workers_default = max(1, min(4, (os.cpu_count() or 2) - 1))
 max_workers = st.sidebar.number_input("Số worker batch", min_value=1, max_value=max(1, os.cpu_count() or 1), value=max_workers_default, step=1)
 chunk_size = st.sidebar.number_input("Kích thước chunk", min_value=50, max_value=2000, value=300, step=50)
-cache_db_path = st.sidebar.text_input("SQLite cache path", "/tmp/address_conversion_cache.sqlite3")
+cache_db_path = st.sidebar.text_input("SQLite cache path", str(DEFAULT_CACHE_DB))
 uploaded = st.sidebar.file_uploader("Tải CSV/Excel", type=["csv", "xlsx", "xls"])
 address_col = None
-df_preview: Optional[pd.DataFrame] = None
 excel_sheet = None
+df_preview: Optional[pd.DataFrame] = None
 
 if uploaded is not None:
     ext = Path(uploaded.name).suffix.lower()
@@ -354,15 +290,7 @@ with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
             res = gc.geocode(float(lat_in), float(lon_in))
             if res:
                 st.success("✅ Đã xác định địa chỉ")
-                show = {
-                    "house_number": res.get("house_number"),
-                    "road": res.get("road"),
-                    "ward": res.get("ward"),
-                    "province": res.get("province"),
-                    "latitude": res.get("latitude"),
-                    "longitude": res.get("longitude"),
-                    "formatted": res.get("formatted"),
-                }
+                show = {"house_number": res.get("house_number"), "road": res.get("road"), "ward": res.get("ward"), "province": res.get("province"), "latitude": res.get("latitude"), "longitude": res.get("longitude"), "formatted": res.get("formatted")}
                 st.dataframe(pd.DataFrame([show]), use_container_width=True)
                 st.session_state["last_points"] = pd.DataFrame([{"latitude": show["latitude"], "longitude": show["longitude"]}])
             else:
@@ -400,6 +328,27 @@ else:
         try:
             ensure_cache_schema(cache_db_path)
             df_in = normalize_text_column(df_preview, address_col)
+
+            progress_bar = st.progress(0.0, text="Chuẩn bị chạy batch...")
+            live_cols = st.columns(3)
+            live_elapsed = live_cols[0].empty()
+            live_processed = live_cols[1].empty()
+            live_cache = live_cols[2].empty()
+            live_caption = st.empty()
+
+            def on_progress(info: Dict[str, float]) -> None:
+                total_unique = max(1, int(info["unique_total"]))
+                processed_unique = int(info["processed_unique"])
+                progress = min(1.0, processed_unique / total_unique)
+                progress_bar.progress(progress, text=f"Đang xử lý {processed_unique:,}/{int(info['unique_total']):,} địa chỉ unique")
+                live_elapsed.metric("Đang chạy", f"{float(info['elapsed_seconds']):.1f}s")
+                live_processed.metric("Đã xử lý unique", f"{processed_unique:,}")
+                live_cache.metric("Cache hit", f"{int(info['cache_hits']):,}")
+                live_caption.caption(
+                    f"Còn lại: {int(info['remaining_unique']):,} • Compute mới: {int(info['computed']):,} • "
+                    f"Lỗi: {int(info['invalid']):,} • Có geocoder: {int(info['used_geocoder']):,}"
+                )
+
             with st.spinner("Đang chuẩn hóa..."):
                 df_out, summary = convert_dataframe_address_column(
                     df_in,
@@ -409,7 +358,10 @@ else:
                     db_path=cache_db_path,
                     output_prefix="converted_",
                     chunk_size=int(chunk_size),
+                    progress_callback=on_progress,
                 )
+
+            progress_bar.progress(1.0, text="Hoàn tất batch")
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Tổng dòng", f"{summary['total_rows']:,}")
             m2.metric("Địa chỉ unique", f"{summary['unique_rows']:,}")

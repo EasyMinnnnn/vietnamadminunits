@@ -269,7 +269,7 @@ st.sidebar.subheader("Batch (CSV/Excel)")
 max_workers_default = max(1, min(4, (os.cpu_count() or 2) - 1))
 max_workers = st.sidebar.number_input("Số worker batch", min_value=1, max_value=max(1, os.cpu_count() or 1), value=max_workers_default, step=1)
 chunk_size = st.sidebar.number_input("Kích thước chunk", min_value=50, max_value=2000, value=300, step=50)
-cache_db_path = st.sidebar.text_input("SQLite cache path", str(DEFAULT_CACHE_DB))
+cache_db_path = st.sidebar.text_input("SQLite cache path", "/tmp/address_conversion_cache.sqlite3")
 uploaded = st.sidebar.file_uploader("Tải CSV/Excel", type=["csv", "xlsx", "xls"])
 address_col = None
 df_preview: Optional[pd.DataFrame] = None

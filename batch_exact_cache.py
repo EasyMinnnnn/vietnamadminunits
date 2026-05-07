@@ -21,7 +21,7 @@ ProgressCallback = Callable[[Dict[str, float]], None]
 
 
 def normalize_address_value(value: object) -> str:
-    """Chuẩn hóa nhẹ text đầu vào nhưng không làm mất dấu tiếng Việt."""
+    """Chuẩn hóa text đầu vào nhưng vẫn giữ dấu tiếng Việt."""
     if value is None:
         return ""
     if isinstance(value, float) and math.isnan(value):
@@ -30,7 +30,7 @@ def normalize_address_value(value: object) -> str:
     text = str(value)
     text = unicodedata.normalize("NFC", text)
     text = text.replace("\r", " ").replace("\n", " ").replace("\t", " ")
-    text = text.replace("，", ",").replace("؛", ";")
+    text = text.replace("，", ",").replace("；", ";")
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -48,6 +48,7 @@ def _backup_corrupt_db(path: Path) -> None:
 
     ts = int(time.time())
     backup_path = path.with_suffix(path.suffix + f".corrupt.{ts}.bak")
+
     try:
         shutil.move(str(path), str(backup_path))
     except Exception:
@@ -142,8 +143,10 @@ def load_cached_results(
     include_invalid: bool = False,
 ) -> Dict[str, Dict[str, object]]:
     """
-    Đọc cache. Mặc định KHÔNG trả lại cache lỗi định dạng.
-    Lý do: sau khi sửa rule, các dòng từng lỗi cần được chạy lại.
+    Đọc cache.
+
+    Mặc định KHÔNG lấy cache lỗi invalid_format.
+    Lý do: sau khi sửa rule, các địa chỉ từng báo "Lỗi định dạng" phải được chạy lại.
     """
     if not addresses:
         return {}
@@ -155,6 +158,7 @@ def load_cached_results(
         try:
             with _connect(path) as conn:
                 conn.row_factory = sqlite3.Row
+
                 for chunk in _chunked(list(addresses), size=900):
                     placeholders = ",".join(["?"] * len(chunk))
                     rows = conn.execute(
@@ -189,6 +193,7 @@ def load_cached_results(
                         }
 
                 return results
+
         except sqlite3.DatabaseError as exc:
             if "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
@@ -209,6 +214,7 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
 
     path = ensure_cache_schema(db_path)
     now = time.time()
+
     rows = [
         (
             str(r["normalized_address"]),
@@ -254,6 +260,7 @@ def upsert_cached_results(records: Sequence[Dict[str, object]], db_path: Optiona
                 )
                 conn.commit()
                 return
+
         except sqlite3.DatabaseError as exc:
             if "malformed" in str(exc).lower():
                 _backup_corrupt_db(path)
@@ -279,11 +286,14 @@ def _split_address_parts(text: str) -> List[str]:
 
 def _legacy_four_part_candidate(text: str) -> Optional[str]:
     """
-    convert_address() xử lý tốt nhất dạng: street, ward, district, province.
-    Nếu phần street có nhiều dấu phẩy, ví dụ:
-      số 16, LKV 18B 0, Phường Trung Hưng, Sơn Tây, Hà Nội
-    thì gom tất cả phần trước 3 cấp hành chính cuối vào street:
-      số 16 LKV 18B 0, Phường Trung Hưng, Sơn Tây, Hà Nội
+    convert_address() xử lý tốt nhất dạng:
+        street, ward, district, province
+
+    Nếu phần mô tả tài sản/street có nhiều dấu phẩy:
+        Thửa đất số 482A, tờ bản đồ số 03, tổ dân phố..., Dương Nội, Hà Đông, Hà Nội
+
+    thì gom mọi phần trước 3 cấp hành chính cuối vào street:
+        Thửa đất số 482A tờ bản đồ số 03 tổ dân phố..., Dương Nội, Hà Đông, Hà Nội
     """
     parts = _split_address_parts(text)
     if len(parts) < 4:
@@ -298,6 +308,22 @@ def _legacy_four_part_candidate(text: str) -> Optional[str]:
         return f"{ward}, {district}, {province}"
 
     return f"{street}, {ward}, {district}, {province}"
+
+
+def _remove_placeholder_words(text: str) -> str:
+    """
+    Dữ liệu nguồn có nhiều giá trị đệm như 'Khác'/'Không' đặt trước phường/xã.
+    Chỉ bỏ khi nó là token đứng trước dấu phẩy hoặc sát trước đơn vị hành chính.
+    """
+    text = _clean_for_parser(text)
+
+    # "Tổ dân phố 10 Khác, Đồng Mai..." -> "Tổ dân phố 10, Đồng Mai..."
+    text = re.sub(r"\b(Khác|Không)\s*,", ",", text, flags=re.IGNORECASE)
+
+    # "Lô đất số 14 Không, Phùng Xá..." -> "Lô đất số 14, Phùng Xá..."
+    text = re.sub(r"\s+\b(Khác|Không)\b(?=\s*,)", "", text, flags=re.IGNORECASE)
+
+    return _clean_for_parser(text)
 
 
 def _address_variants(text: str) -> List[Tuple[str, str]]:
@@ -315,18 +341,14 @@ def _address_variants(text: str) -> List[Tuple[str, str]]:
             seen.add(key)
             variants.append((method, candidate))
 
-    add("raw", text)
-    add("clean_commas", _clean_for_parser(text))
-    add("merge_extra_street_commas", _legacy_four_part_candidate(text))
+    cleaned = _clean_for_parser(text)
+    no_placeholder = _remove_placeholder_words(cleaned)
 
-    without_placeholder = re.sub(
-        r"\b(?:Khác|Không)\s*,",
-        ",",
-        _clean_for_parser(text),
-        flags=re.IGNORECASE,
-    )
-    add("remove_placeholder_before_comma", without_placeholder)
-    add("remove_placeholder_and_merge", _legacy_four_part_candidate(without_placeholder))
+    add("raw", text)
+    add("clean_commas", cleaned)
+    add("merge_extra_street_commas", _legacy_four_part_candidate(cleaned))
+    add("remove_placeholder", no_placeholder)
+    add("remove_placeholder_and_merge", _legacy_four_part_candidate(no_placeholder))
 
     return variants
 
@@ -365,32 +387,102 @@ def _make_record(
     }
 
 
-def _convert_one_address(normalized_address: str, *, short_name: bool, error_value: str) -> Dict[str, object]:
-    from vietnamadminunits import ParseMode, convert_address, parse_address
+def _mode_name(parse_mode: object, default: str = "LEGACY") -> str:
+    if parse_mode is None:
+        return default
 
+    name = getattr(parse_mode, "name", None)
+    if name:
+        return str(name)
+
+    value = getattr(parse_mode, "value", None)
+    if value:
+        return str(value)
+
+    return str(parse_mode)
+
+
+def _parse_mode_obj(parse_mode_name: str):
+    from vietnamadminunits import ParseMode
+
+    if not parse_mode_name:
+        return ParseMode.LEGACY
+
+    try:
+        return ParseMode[parse_mode_name]
+    except Exception:
+        pass
+
+    try:
+        return getattr(ParseMode, parse_mode_name)
+    except Exception:
+        return parse_mode_name
+
+
+def _try_convert_address(candidate: str, *, short_name: bool) -> Optional[str]:
+    from vietnamadminunits import convert_address
+
+    converted = convert_address(candidate)
+    if not converted:
+        return None
+
+    return _get_address_safely(converted, short_name=short_name)
+
+
+def _try_parse_address(
+    candidate: str,
+    *,
+    parse_mode_name: str,
+    keep_street: bool,
+    level: int,
+    short_name: bool,
+) -> Optional[str]:
+    from vietnamadminunits import parse_address
+
+    parsed = parse_address(
+        candidate,
+        mode=_parse_mode_obj(parse_mode_name),
+        keep_street=keep_street,
+        level=int(level),
+    )
+
+    if not parsed:
+        return None
+
+    return _get_address_safely(parsed, short_name=short_name)
+
+
+def _convert_one_address(
+    normalized_address: str,
+    *,
+    short_name: bool,
+    error_value: str,
+    parse_mode_name: str = "LEGACY",
+    keep_street: bool = True,
+    level: int = 3,
+) -> Dict[str, object]:
     if not normalized_address:
         return _make_record(
             normalized_address=normalized_address,
             converted_address=error_value,
             status="invalid_format",
             error_message="empty_address",
+            method="empty_address",
         )
 
     errors: List[str] = []
     variants = _address_variants(normalized_address)
 
-    # 1) Ưu tiên đúng luồng chuẩn hóa cũ -> mới.
+    # 1) Ưu tiên giống nút đơn lẻ "Chuẩn hóa (→ 2025)".
     for method, candidate in variants:
         try:
-            converted = convert_address(candidate)
-
-            if converted:
+            converted_address = _try_convert_address(candidate, short_name=short_name)
+            if converted_address:
                 return _make_record(
                     normalized_address=normalized_address,
-                    converted_address=_get_address_safely(converted, short_name=short_name),
+                    converted_address=converted_address,
                     status="computed",
                     error_message=None,
-                    used_geocoder=int(getattr(converted, "_used_geocoder", False)),
                     method=f"convert_address:{method}",
                     matched_candidate=candidate,
                 )
@@ -399,79 +491,85 @@ def _convert_one_address(normalized_address: str, *, short_name: bool, error_val
         except Exception as exc:
             errors.append(f"convert_address:{method}: {type(exc).__name__}: {exc}")
 
-    # 2) Nếu input là địa chỉ cũ nhưng bị bẩn, parse LEGACY trước rồi convert lại.
+    # 2) Nếu convert không ăn, thử parse đúng mode trên sidebar.
     for method, candidate in variants:
         try:
-            parsed_legacy = parse_address(candidate, mode=ParseMode.LEGACY, keep_street=True, level=3)
+            parsed_address = _try_parse_address(
+                candidate,
+                parse_mode_name=parse_mode_name,
+                keep_street=keep_street,
+                level=level,
+                short_name=short_name,
+            )
 
-            if not parsed_legacy:
-                errors.append(f"parse_legacy:{method}: returned_none")
-                continue
-
-            legacy_address = _get_address_safely(parsed_legacy, short_name=False)
-            legacy_candidates = [legacy_address, _legacy_four_part_candidate(legacy_address)]
-
-            for legacy_candidate in legacy_candidates:
-                if not legacy_candidate:
-                    continue
-
-                try:
-                    converted = convert_address(legacy_candidate)
-
-                    if converted:
-                        return _make_record(
-                            normalized_address=normalized_address,
-                            converted_address=_get_address_safely(converted, short_name=short_name),
-                            status="computed",
-                            error_message=None,
-                            used_geocoder=int(getattr(converted, "_used_geocoder", False)),
-                            method=f"parse_legacy_then_convert:{method}",
-                            matched_candidate=legacy_candidate,
-                        )
-
-                    errors.append("parse_legacy_then_convert: returned_none")
-                except Exception as exc:
-                    errors.append(f"parse_legacy_then_convert: {type(exc).__name__}: {exc}")
-
-        except Exception as exc:
-            errors.append(f"parse_legacy:{method}: {type(exc).__name__}: {exc}")
-
-    # 3) Nếu input thực chất đã là địa chỉ 2025, chuẩn hóa bằng parse FROM_2025.
-    for method, candidate in variants:
-        try:
-            parsed_new = parse_address(candidate, mode=ParseMode.FROM_2025, keep_street=True, level=2)
-
-            if parsed_new:
+            if parsed_address:
                 return _make_record(
                     normalized_address=normalized_address,
-                    converted_address=_get_address_safely(parsed_new, short_name=short_name),
+                    converted_address=parsed_address,
                     status="computed",
                     error_message=None,
-                    used_geocoder=0,
-                    method=f"parse_from_2025:{method}",
+                    method=f"parse_address:{parse_mode_name}:{method}",
                     matched_candidate=candidate,
                 )
 
-            errors.append(f"parse_from_2025:{method}: returned_none")
+            errors.append(f"parse_address:{parse_mode_name}:{method}: returned_none")
         except Exception as exc:
-            errors.append(f"parse_from_2025:{method}: {type(exc).__name__}: {exc}")
+            errors.append(f"parse_address:{parse_mode_name}:{method}: {type(exc).__name__}: {exc}")
+
+    # 3) Fallback chéo: nhiều địa chỉ thực tế đang trộn cũ/mới.
+    fallback_modes = ["LEGACY", "FROM_2025"]
+    for fallback_mode in fallback_modes:
+        if fallback_mode == parse_mode_name:
+            continue
+
+        fallback_level = 3 if fallback_mode == "LEGACY" else 2
+
+        for method, candidate in variants:
+            try:
+                parsed_address = _try_parse_address(
+                    candidate,
+                    parse_mode_name=fallback_mode,
+                    keep_street=keep_street,
+                    level=fallback_level,
+                    short_name=short_name,
+                )
+
+                if parsed_address:
+                    return _make_record(
+                        normalized_address=normalized_address,
+                        converted_address=parsed_address,
+                        status="computed",
+                        error_message=None,
+                        method=f"parse_address:{fallback_mode}:{method}",
+                        matched_candidate=candidate,
+                    )
+
+                errors.append(f"parse_address:{fallback_mode}:{method}: returned_none")
+            except Exception as exc:
+                errors.append(f"parse_address:{fallback_mode}:{method}: {type(exc).__name__}: {exc}")
 
     return _make_record(
         normalized_address=normalized_address,
         converted_address=error_value,
         status="invalid_format",
-        error_message=" | ".join(errors[-8:]) if errors else "unknown_error",
-        used_geocoder=0,
+        error_message=" | ".join(errors[-10:]) if errors else "unknown_error",
         method="failed_all_variants",
         matched_candidate=None,
     )
 
 
-def _convert_address_chunk(args: Tuple[List[str], bool, str]) -> List[Dict[str, object]]:
-    addresses, short_name, error_value = args
+def _convert_address_chunk(args: Tuple[List[str], bool, str, str, bool, int]) -> List[Dict[str, object]]:
+    addresses, short_name, error_value, parse_mode_name, keep_street, level = args
 
     return [
-        _convert_one_address(addr, short_name=short_name, error_value=error_value)
+        _convert_one_address(
+            addr,
+            short_name=short_name,
+            error_value=error_value,
+            parse_mode_name=parse_mode_name,
+            keep_street=keep_street,
+            level=level,
+        )
         for addr in addresses
     ]
 
@@ -511,13 +609,18 @@ def convert_unique_addresses(
     db_path: Optional[str] = None,
     chunk_size: int = 300,
     progress_callback: Optional[ProgressCallback] = None,
+    parse_mode: object = "LEGACY",
+    keep_street: bool = True,
+    level: int = 3,
 ) -> Tuple[Dict[str, Dict[str, object]], Dict[str, int]]:
     started_at = time.time()
     unique_addresses = list(dict.fromkeys(addresses))
+    parse_mode_name = _mode_name(parse_mode, default="LEGACY")
 
-    # Chỉ lấy cache thành công. Cache invalid_format cũ sẽ được chạy lại sau khi sửa rule.
+    # Chỉ lấy cache thành công; cache lỗi cũ phải chạy lại.
     cached = load_cached_results(unique_addresses, db_path=db_path, include_invalid=False)
     misses = [addr for addr in unique_addresses if addr not in cached]
+
     results: Dict[str, Dict[str, object]] = dict(cached)
 
     stats = {
@@ -537,9 +640,14 @@ def convert_unique_addresses(
     chunk_size = max(50, int(chunk_size))
     chunks: List[List[str]] = [list(chunk) for chunk in _chunked(misses, size=chunk_size)]
 
+    worker_args = [
+        (chunk, short_name, error_value, parse_mode_name, bool(keep_street), int(level))
+        for chunk in chunks
+    ]
+
     if workers == 1 or len(chunks) == 1:
-        for chunk in chunks:
-            rows = _convert_address_chunk((chunk, short_name, error_value))
+        for args in worker_args:
+            rows = _convert_address_chunk(args)
             upsert_cached_results(rows, db_path=db_path)
 
             for row in rows:
@@ -554,10 +662,7 @@ def convert_unique_addresses(
         return results, stats
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = [
-            executor.submit(_convert_address_chunk, (chunk, short_name, error_value))
-            for chunk in chunks
-        ]
+        futures = [executor.submit(_convert_address_chunk, args) for args in worker_args]
 
         for future in as_completed(futures):
             rows = future.result()
@@ -586,6 +691,9 @@ def convert_dataframe_address_column(
     output_prefix: str = "converted_",
     chunk_size: int = 300,
     progress_callback: Optional[ProgressCallback] = None,
+    parse_mode: object = "LEGACY",
+    keep_street: bool = True,
+    level: int = 3,
 ) -> Tuple[pd.DataFrame, Dict[str, float]]:
     started = time.time()
     df_out = df.copy()
@@ -610,6 +718,9 @@ def convert_dataframe_address_column(
         db_path=db_path,
         chunk_size=chunk_size,
         progress_callback=progress_callback,
+        parse_mode=parse_mode,
+        keep_street=keep_street,
+        level=level,
     )
 
     df_out[converted_col] = df_out[normalized_col].map(

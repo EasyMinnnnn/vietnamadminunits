@@ -284,6 +284,74 @@ def _split_address_parts(text: str) -> List[str]:
     return [p.strip(" ,;") for p in _clean_for_parser(text).split(",") if p.strip(" ,;")]
 
 
+def _strip_vn_accents(text: str) -> str:
+    text = unicodedata.normalize("NFD", str(text or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return text.replace("đ", "d").replace("Đ", "D").lower().strip()
+
+
+def _is_bare_number_admin(part: str) -> bool:
+    return bool(re.fullmatch(r"\d{1,3}[A-Za-z]?", str(part or "").strip()))
+
+
+def _normalize_numeric_ward(part: str) -> str:
+    raw = str(part or "").strip()
+    norm = _strip_vn_accents(raw)
+
+    if _is_bare_number_admin(raw):
+        return f"Phường {raw}"
+
+    m = re.fullmatch(r"(?:p|phuong)\.?\s*(\d{1,3}[a-z]?)", norm, flags=re.IGNORECASE)
+    if m:
+        number = m.group(1)
+        return f"Phường {number.upper() if number[-1:].isalpha() else number}"
+
+    return raw
+
+
+def _normalize_numeric_district(part: str) -> str:
+    raw = str(part or "").strip()
+    norm = _strip_vn_accents(raw)
+
+    if _is_bare_number_admin(raw):
+        return f"Quận {raw}"
+
+    m = re.fullmatch(r"(?:q|quan)\.?\s*(\d{1,3}[a-z]?)", norm, flags=re.IGNORECASE)
+    if m:
+        number = m.group(1)
+        return f"Quận {number.upper() if number[-1:].isalpha() else number}"
+
+    return raw
+
+
+def _expand_numeric_legacy_admin_parts(text: str) -> Optional[str]:
+    """
+    Sinh biến thể cho địa chỉ bị rút gọn cấp hành chính bằng số:
+      322/6 Vĩnh Viễn, 4, 10, Hồ Chí Minh
+    ->
+      322/6 Vĩnh Viễn, Phường 4, Quận 10, Hồ Chí Minh
+    """
+    parts = _split_address_parts(text)
+    if len(parts) < 4:
+        return None
+
+    province = parts[-1]
+    district = parts[-2]
+    ward = parts[-3]
+    street = " ".join(parts[:-3]).strip()
+
+    ward2 = _normalize_numeric_ward(ward)
+    district2 = _normalize_numeric_district(district)
+
+    if ward2 == ward and district2 == district:
+        return None
+
+    if not street:
+        return f"{ward2}, {district2}, {province}"
+
+    return f"{street}, {ward2}, {district2}, {province}"
+
+
 def _legacy_four_part_candidate(text: str) -> Optional[str]:
     """
     convert_address() xử lý tốt nhất dạng:
@@ -343,7 +411,13 @@ def _address_variants(text: str) -> List[Tuple[str, str]]:
 
     cleaned = _clean_for_parser(text)
     no_placeholder = _remove_placeholder_words(cleaned)
+    expanded_numeric = _expand_numeric_legacy_admin_parts(cleaned)
+    expanded_numeric_no_placeholder = _expand_numeric_legacy_admin_parts(no_placeholder)
 
+    # Ưu tiên biến thể đã thêm Phường/Quận cho dạng: street, 4, 10, Hồ Chí Minh.
+    # Nếu để raw chạy trước, thư viện có thể trả về kết quả thiếu ward/district nhưng vẫn coi là thành công.
+    add("expand_numeric_admin_parts", expanded_numeric)
+    add("expand_numeric_admin_parts_no_placeholder", expanded_numeric_no_placeholder)
     add("raw", text)
     add("clean_commas", cleaned)
     add("merge_extra_street_commas", _legacy_four_part_candidate(cleaned))

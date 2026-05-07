@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 import unicodedata
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import pydeck as pdk
@@ -170,6 +171,199 @@ def normalize_text_column(df: pd.DataFrame, address_col: str) -> pd.DataFrame:
     df = df.copy()
     df[address_col] = df[address_col].map(normalize_address_value)
     return df
+
+
+def _strip_vn_accents(text: str) -> str:
+    text = unicodedata.normalize("NFD", str(text or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return text.replace("đ", "d").replace("Đ", "D").lower().strip()
+
+
+def _split_address_parts_for_app(text: str) -> List[str]:
+    text = normalize_address_value(text)
+    text = re.sub(r"\s*,\s*", ", ", text)
+    text = re.sub(r"(?:,\s*){2,}", ", ", text)
+    return [p.strip(" ,;") for p in text.split(",") if p.strip(" ,;")]
+
+
+def _is_bare_number_admin(part: str) -> bool:
+    return bool(re.fullmatch(r"\d{1,3}[A-Za-z]?", str(part or "").strip()))
+
+
+def _normalize_numeric_ward(part: str) -> str:
+    raw = str(part or "").strip()
+    norm = _strip_vn_accents(raw)
+
+    # 4 / 04 / 4A  -> Phường 4 / Phường 04 / Phường 4A
+    if _is_bare_number_admin(raw):
+        return f"Phường {raw}"
+
+    # P4 / P.4 / phuong 4 / phường 4 -> Phường 4
+    m = re.fullmatch(r"(?:p|phuong)\.?\s*(\d{1,3}[a-z]?)", norm, flags=re.IGNORECASE)
+    if m:
+        return f"Phường {m.group(1).upper() if m.group(1).endswith(('a','b','c')) else m.group(1)}"
+
+    return raw
+
+
+def _normalize_numeric_district(part: str) -> str:
+    raw = str(part or "").strip()
+    norm = _strip_vn_accents(raw)
+
+    # 10 / 01 / 12 -> Quận 10 / Quận 01 / Quận 12
+    if _is_bare_number_admin(raw):
+        return f"Quận {raw}"
+
+    # Q10 / Q.10 / quan 10 / quận 10 -> Quận 10
+    m = re.fullmatch(r"(?:q|quan)\.?\s*(\d{1,3}[a-z]?)", norm, flags=re.IGNORECASE)
+    if m:
+        return f"Quận {m.group(1).upper() if m.group(1).endswith(('a','b','c')) else m.group(1)}"
+
+    return raw
+
+
+def expand_numeric_legacy_admin_parts(address: str) -> Optional[str]:
+    """
+    Xử lý dữ liệu cũ bị rút gọn cấp hành chính bằng số:
+      322/6 Vĩnh Viễn, 4, 10, Hồ Chí Minh
+    thành:
+      322/6 Vĩnh Viễn, Phường 4, Quận 10, Hồ Chí Minh
+
+    Chỉ sinh biến thể mới, không sửa phá dữ liệu gốc.
+    """
+    parts = _split_address_parts_for_app(address)
+    if len(parts) < 4:
+        return None
+
+    province = parts[-1]
+    district = parts[-2]
+    ward = parts[-3]
+    street = " ".join(parts[:-3]).strip()
+
+    ward2 = _normalize_numeric_ward(ward)
+    district2 = _normalize_numeric_district(district)
+
+    if ward2 == ward and district2 == district:
+        return None
+
+    if not street:
+        return f"{ward2}, {district2}, {province}"
+
+    return f"{street}, {ward2}, {district2}, {province}"
+
+
+def _address_input_variants(address: str) -> List[Tuple[str, str]]:
+    variants: List[Tuple[str, str]] = []
+    seen = set()
+
+    def add(method: str, candidate: Optional[str]) -> None:
+        if not candidate:
+            return
+        candidate = normalize_address_value(candidate)
+        key = candidate.casefold()
+        if candidate and key not in seen:
+            seen.add(key)
+            variants.append((method, candidate))
+
+    # Với địa chỉ có dạng "..., 4, 10, Hồ Chí Minh", ưu tiên biến thể đã thêm Phường/Quận trước.
+    add("expand_numeric_admin_parts", expand_numeric_legacy_admin_parts(address))
+    add("raw", address)
+    return variants
+
+
+def _admin_result_score(obj: object) -> float:
+    data = getattr(obj, "__dict__", {}) or {}
+    score = 0.0
+    for key in ["province", "district", "ward"]:
+        if data.get(key):
+            score += 1.0
+    if data.get("street"):
+        score += 0.25
+    if data.get("latitude") is not None and data.get("longitude") is not None:
+        score += 0.25
+    return score
+
+
+def parse_address_best(address: str, *, mode, keep_street: bool, level: int):
+    best = None
+    best_candidate = None
+    best_method = None
+    best_score = -1.0
+    errors = []
+
+    for method, candidate in _address_input_variants(address):
+        try:
+            obj = parse_address(candidate, mode=mode, keep_street=keep_street, level=int(level))
+            if not obj:
+                continue
+            score = _admin_result_score(obj)
+            if score > best_score:
+                best = obj
+                best_candidate = candidate
+                best_method = method
+                best_score = score
+        except Exception as exc:
+            errors.append(f"{method}: {type(exc).__name__}: {exc}")
+
+    if best is not None:
+        return best, best_candidate, best_method
+
+    if errors:
+        raise RuntimeError(" | ".join(errors[-5:]))
+
+    return None, None, None
+
+
+def convert_address_best(address: str, *, short_name: bool = True):
+    best = None
+    best_candidate = None
+    best_method = None
+    best_score = -1.0
+    errors = []
+
+    for method, candidate in _address_input_variants(address):
+        try:
+            obj = convert_address(candidate)
+            if not obj:
+                continue
+            score = _admin_result_score(obj)
+            if score > best_score:
+                best = obj
+                best_candidate = candidate
+                best_method = method
+                best_score = score
+        except Exception as exc:
+            errors.append(f"{method}: {type(exc).__name__}: {exc}")
+
+    # Nếu convert_address không xử lý được, vẫn thử parse theo sidebar để tránh trả lỗi trắng.
+    if best is None:
+        for fallback_mode, fallback_level in [(mode, int(level)), (ParseMode.LEGACY, 3), (ParseMode.FROM_2025, 2)]:
+            for method, candidate in _address_input_variants(address):
+                try:
+                    obj = parse_address(
+                        candidate,
+                        mode=fallback_mode,
+                        keep_street=keep_street,
+                        level=fallback_level,
+                    )
+                    if not obj:
+                        continue
+                    score = _admin_result_score(obj)
+                    if score > best_score:
+                        best = obj
+                        best_candidate = candidate
+                        best_method = f"parse_fallback:{getattr(fallback_mode, 'name', fallback_mode)}:{method}"
+                        best_score = score
+                except Exception as exc:
+                    errors.append(f"parse_fallback:{method}: {type(exc).__name__}: {exc}")
+
+    if best is not None:
+        return best, best_candidate, best_method
+
+    if errors:
+        raise RuntimeError(" | ".join(errors[-5:]))
+
+    return None, None, None
 
 
 def to_clean_df(obj: Any) -> pd.DataFrame:
@@ -393,7 +587,7 @@ with c2:
 
 if parse_clicked:
     try:
-        parsed = parse_address(
+        parsed, used_candidate, used_method = parse_address_best(
             address_input,
             mode=mode,
             keep_street=keep_street,
@@ -401,6 +595,8 @@ if parse_clicked:
         )
         if parsed:
             st.success("Phân tích thành công")
+            if used_candidate and normalize_address_value(used_candidate) != normalize_address_value(address_input):
+                st.caption(f"Đã hiểu địa chỉ là: {used_candidate}")
             df_parsed = to_clean_df(parsed)
             st.dataframe(df_parsed, use_container_width=True)
             set_last_points_from_df(df_parsed)
@@ -412,9 +608,11 @@ if parse_clicked:
 
 if convert_clicked:
     try:
-        converted = convert_address(address_input)
+        converted, used_candidate, used_method = convert_address_best(address_input, short_name=short_name)
         if converted:
             st.success("Kết quả sau chuẩn hóa (→ 2025)")
+            if used_candidate and normalize_address_value(used_candidate) != normalize_address_value(address_input):
+                st.caption(f"Đã hiểu địa chỉ là: {used_candidate}")
             df_converted = to_clean_df(converted)
             st.dataframe(df_converted, use_container_width=True)
             set_last_points_from_df(df_converted)

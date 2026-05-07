@@ -1,4 +1,6 @@
 # app.py
+from __future__ import annotations
+
 import os
 import time
 import unicodedata
@@ -9,8 +11,8 @@ import pandas as pd
 import pydeck as pdk
 import streamlit as st
 from pydeck.data_utils import viewport_helpers as vh
-
 from vietnamadminunits import ParseMode, convert_address, parse_address
+
 from batch_exact_cache import (
     DEFAULT_CACHE_DB,
     convert_dataframe_address_column,
@@ -19,56 +21,70 @@ from batch_exact_cache import (
 )
 from geocode_tool import Geocoder
 
+
 st.set_page_config(page_title="Chuẩn hóa địa chỉ Việt Nam", layout="wide")
 
-CSS = """<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
-:root{
-  --gold:#D4AF37; --gold-hi:#FFD700;
-  --emerald-900:#083D3B; --emerald-800:#0A4D4A; --emerald-700:#0E6963; --emerald:#066E68;
-  --panel:rgba(255,255,255,.045); --panel-bd:rgba(255,255,255,.09);
-  --shadow:0 14px 36px rgba(0,0,0,.26);
-  --r:14px; --r-lg:18px; --r-xl:22px;
+CSS = """
+<style>
+.block-container {
+    padding-top: 2rem;
+    max-width: 1180px;
 }
-html, body, [class*="css"]{ font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-.stApp{ background: radial-gradient(1200px 600px at 15% -10%, #0D5A56 0%, #0A4D4A 58%, #083D3B 100%); color:#F3FBFA; }
-.block-container{ max-width:1180px; padding-top:.75rem; }
-[data-testid="stSidebar"] > div:first-child{ background:var(--emerald-700); padding-top:8px; }
-section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3{ color:var(--gold); }
-.brand-box{ border:2px solid var(--gold); border-radius:12px; padding:10px 12px; text-align:center; color:var(--gold); font-weight:900; letter-spacing:.6px; margin:2px 8px 14px; }
-.hero{ position:relative; padding:22px 26px; border-radius:var(--r-xl); background:linear-gradient(135deg, #0F7B74 0%, var(--emerald-700) 55%, var(--emerald-800) 100%); border:1px solid var(--panel-bd); box-shadow:var(--shadow); margin:8px 0 20px; overflow:hidden; }
-.hero:before{ content:""; position:absolute; inset:0; background: linear-gradient(120deg, transparent 0 60%, rgba(255,255,255,.05) 62%, transparent 64%); pointer-events:none; }
-.hero:after{ content:""; position:absolute; left:22px; right:22px; top:10px; height:8px; background:linear-gradient(90deg, var(--gold), var(--gold-hi)); border-radius:10px; }
-.hero h1{ margin:.55rem 0 .3rem; font-weight:900; letter-spacing:.2px; color:var(--gold); }
-.hero p{ margin:0; color:#CFE7E5; }
-.card{ background:var(--panel); border:1px solid var(--panel-bd); border-radius:var(--r-lg); box-shadow:var(--shadow); padding:14px 16px; margin-bottom:14px; backdrop-filter:blur(6px); }
-.card .card-title{ display:flex; gap:10px; align-items:center; font-weight:800; color:var(--gold); margin-bottom:8px; }
-.badge{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:999px; background:var(--emerald); }
-.stTextInput input, .stSelectbox div[data-baseweb="select"]>div, .stTextArea textarea, .stNumberInput input{ background:#fff !important; color:#111 !important; height:44px; border-radius:12px !important; border:1px solid #E5E7EB !important; }
-.stButton > button{ border:0; border-radius:12px; padding:10px 16px; font-weight:800; box-shadow:0 6px 16px rgba(0,0,0,.18); transition:transform .05s, filter .15s; }
-.btn-primary > button{ background:linear-gradient(90deg, var(--gold), var(--gold-hi)) !important; color:#111 !important; }
-.btn-ghost > button{ background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none; }
-.stButton > button:hover{ filter:brightness(.97); } .stButton > button:active{ transform:translateY(1px); }
-[data-testid="stTable"] thead tr th, .stDataFrame thead tr th{ background:var(--emerald) !important; color:var(--gold) !important; font-weight:800 !important; border-bottom:2px solid var(--gold) !important; }
-.stDataFrame{ border:1.6px solid color-mix(in srgb, var(--gold) 58%, transparent); border-radius:12px; overflow:hidden; }
-.stDataFrame tbody td{ border-bottom:1px solid rgba(255,255,255,.08) !important; }
-.stAlert{ border-radius:12px; }
-.pydeck_chart, .stDeckGlJsonChart{ border-radius:12px; overflow:hidden; border:1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
-h2, h3{ letter-spacing:.1px; }
-</style>"""
+[data-testid="stSidebar"] {
+    min-width: 310px;
+}
+.main-title {
+    background: linear-gradient(135deg, #087c73 0%, #06433f 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 22px;
+    padding: 28px 34px;
+    margin-bottom: 22px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+}
+.main-title h1 {
+    margin: 0;
+    color: #f5c443;
+    font-size: 2.5rem;
+    font-weight: 800;
+}
+.section-card {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    background: rgba(255, 255, 255, 0.04);
+}
+.section-card b {
+    color: #f5c443;
+}
+.small-gap { height: 12px; }
+</style>
+"""
 st.markdown(CSS, unsafe_allow_html=True)
-st.markdown("""
-<div class="hero">
-  <h1>📍Công cụ chuyển đổi địa giới hành chính</h1>
-</div>
-""", unsafe_allow_html=True)
+
+st.markdown(
+    """
+    <div class="main-title">
+        <h1>📍 Công cụ chuyển đổi địa giới hành chính</h1>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if "last_points" not in st.session_state:
     st.session_state["last_points"] = None
 
 
+# =========================
+# Helpers
+# =========================
+
 def _score_vn(text: str) -> float:
-    vn_chars = "ăâđêôơưĂÂĐÊÔƠƯàáảãạằắẳẵặầấẩẫẬèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ"
+    vn_chars = (
+        "ăâđêôơưĂÂĐÊÔƠƯ"
+        "àáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩị"
+        "òóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ"
+    )
     has_vn = sum(ch in vn_chars for ch in text)
     combining = sum(unicodedata.combining(ch) != 0 for ch in text)
     qmarks = text.count("?")
@@ -79,21 +95,50 @@ def _read_csv_with_fallback(file, encoding_mode: str = "auto") -> pd.DataFrame:
     if encoding_mode and encoding_mode.lower() != "auto":
         file.seek(0)
         return pd.read_csv(file, encoding=encoding_mode)
-    candidates = ["utf-8-sig", "utf-8", "cp1258", "cp1252", "latin1", "utf-16", "utf-16-le", "utf-16-be"]
-    best_df, best_score, best_enc = None, -1e9, None
+
+    candidates = [
+        "utf-8-sig",
+        "utf-8",
+        "cp1258",
+        "cp1252",
+        "latin1",
+        "utf-16",
+        "utf-16-le",
+        "utf-16-be",
+    ]
+
+    best_df: Optional[pd.DataFrame] = None
+    best_score = -1e9
+    best_enc: Optional[str] = None
     errs = []
+
     for enc in candidates:
         try:
             file.seek(0)
             df = pd.read_csv(file, encoding=enc)
-            sample = "\n".join(df.astype(str).head(5).apply(lambda r: " ".join(map(str, r.values)), axis=1).tolist())
-            s = _score_vn(sample)
-            if s > best_score:
-                best_df, best_score, best_enc = df, s, enc
-        except Exception as e:
-            errs.append(f"{enc}: {e}")
+            sample = "\n".join(
+                df.astype(str)
+                .head(5)
+                .apply(lambda r: " ".join(map(str, r.values)), axis=1)
+                .tolist()
+            )
+            score = _score_vn(sample)
+            if score > best_score:
+                best_df = df
+                best_score = score
+                best_enc = enc
+        except Exception as exc:
+            errs.append(f"{enc}: {exc}")
+
     if best_df is None:
-        raise UnicodeDecodeError("utf-8", b"", 0, 1, f"Không decode được CSV. Tried: {errs}")
+        raise UnicodeDecodeError(
+            "utf-8",
+            b"",
+            0,
+            1,
+            f"Không decode được CSV. Tried: {errs}",
+        )
+
     st.session_state["_detected_encoding"] = best_enc
     return best_df
 
@@ -102,18 +147,22 @@ def _read_excel(file, sheet_name: Optional[str] = None) -> pd.DataFrame:
     file.seek(0)
     if sheet_name:
         return pd.read_excel(file, sheet_name=sheet_name)
+
     xls = pd.ExcelFile(file)
-    first = xls.sheet_names[0]
+    first_sheet = xls.sheet_names[0]
     file.seek(0)
-    return pd.read_excel(file, sheet_name=first)
+    return pd.read_excel(file, sheet_name=first_sheet)
 
 
 def load_table(uploaded, encoding_choice: str = "auto", excel_sheet: Optional[str] = None) -> pd.DataFrame:
     ext = Path(uploaded.name).suffix.lower()
+
     if ext == ".csv":
         return _read_csv_with_fallback(uploaded, encoding_choice)
+
     if ext in (".xls", ".xlsx"):
         return _read_excel(uploaded, sheet_name=excel_sheet)
+
     raise ValueError("Định dạng không hỗ trợ. Hỗ trợ: CSV, XLS, XLSX.")
 
 
@@ -126,54 +175,108 @@ def normalize_text_column(df: pd.DataFrame, address_col: str) -> pd.DataFrame:
 def to_clean_df(obj: Any) -> pd.DataFrame:
     if obj is None:
         return pd.DataFrame()
-    data: Dict[str, Any] = {k: v for k, v in getattr(obj, "__dict__", {}).items() if not k.startswith("_") and v is not None}
-    order = ["province", "district", "ward", "street", "short_province", "short_district", "short_ward", "province_type", "district_type", "ward_type", "latitude", "longitude"]
+
+    data: Dict[str, Any] = {
+        k: v
+        for k, v in getattr(obj, "__dict__", {}).items()
+        if not k.startswith("_") and v is not None
+    }
+
+    order = [
+        "province",
+        "district",
+        "ward",
+        "street",
+        "short_province",
+        "short_district",
+        "short_ward",
+        "province_type",
+        "district_type",
+        "ward_type",
+        "latitude",
+        "longitude",
+        "province_code",
+        "district_code",
+        "ward_code",
+        "province_key",
+        "district_key",
+        "ward_key",
+    ]
     cols = [c for c in order if c in data] + [c for c in data if c not in order]
     return pd.DataFrame([{k: data.get(k) for k in cols}])
 
 
-def _normalize_points(df: pd.DataFrame, lat_col: str = "latitude", lon_col: str = "longitude") -> pd.DataFrame:
+def _normalize_points(
+    df: pd.DataFrame,
+    lat_col: str = "latitude",
+    lon_col: str = "longitude",
+) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    if lat_col not in df.columns or lon_col not in df.columns:
+        return pd.DataFrame()
+
     df = df.rename(columns={lat_col: "lat", lon_col: "lon"}).copy()
-    for c in ["lat", "lon"]:
-        s = df[c].astype(str).str.replace(",", ".", regex=False)
+    for col in ["lat", "lon"]:
+        s = df[col].astype(str).str.replace(",", ".", regex=False)
         s_num = s.str.extract(r"(-?\d+(?:\.\d+)?)", expand=False)
-        df[c] = pd.to_numeric(s_num, errors="coerce")
+        df[col] = pd.to_numeric(s_num, errors="coerce")
+
     df = df[df["lat"].between(-90, 90) & df["lon"].between(-180, 180)]
     return df.dropna(subset=["lat", "lon"]).reset_index(drop=True)
 
 
-def render_map(df: pd.DataFrame, lat_col: str = "latitude", lon_col: str = "longitude", label_col=None, point_radius: int = 50):
-    if df is None or df.empty:
-        return
+def set_last_points_from_df(df: pd.DataFrame) -> None:
+    pts = _normalize_points(df)
+    st.session_state["last_points"] = pts if not pts.empty else None
+
+
+def render_map(
+    df: pd.DataFrame,
+    lat_col: str = "latitude",
+    lon_col: str = "longitude",
+    label_col: Optional[str] = None,
+    point_radius: int = 50,
+) -> None:
     pts = _normalize_points(df, lat_col, lon_col)
     if pts.empty:
         st.warning("Không có toạ độ hợp lệ để hiển thị.")
         return
+
     view = vh.compute_view(pts[["lon", "lat"]])
     view.zoom = max(min(view.zoom, 15) - 1, 5)
+
     layers = [
         pdk.Layer(
             "ScatterplotLayer",
             data=pts,
-            get_position='[lon, lat]',
+            get_position="[lon, lat]",
             get_radius=point_radius,
-            get_fill_color='[255, 77, 77, 200]',
+            get_fill_color="[255, 77, 77, 200]",
             pickable=True,
         )
     ]
+
     if label_col and label_col in pts.columns:
         layers.append(
             pdk.Layer(
                 "TextLayer",
                 data=pts,
-                get_position='[lon, lat]',
-                get_text=f'[{label_col}]',
+                get_position="[lon, lat]",
+                get_text=f"[{label_col}]",
                 get_size=14,
-                get_color='[0,0,0,255]',
+                get_color="[0,0,0,255]",
                 get_alignment_baseline='"top"',
             )
         )
-    deck = pdk.Deck(layers=layers, initial_view_state=view, map_provider="carto", map_style="light", tooltip={"text": "{lat}, {lon}"})
+
+    deck = pdk.Deck(
+        layers=layers,
+        initial_view_state=view,
+        map_provider="carto",
+        map_style="light",
+        tooltip={"text": "{lat}, {lon}"},
+    )
     st.pydeck_chart(deck, use_container_width=True)
 
 
@@ -192,135 +295,197 @@ def load_gc():
             return Geocoder(path)
 
 
-st.sidebar.markdown('<div class="brand-box">TTĐGTS</div>', unsafe_allow_html=True)
+# =========================
+# Sidebar
+# =========================
+
+st.sidebar.markdown("### TTĐGTS")
 st.sidebar.header("⚙️ Tùy chọn")
+
 mode_str = st.sidebar.selectbox("Chế độ phân tích", ["LEGACY", "FROM_2025"])
 mode = ParseMode[mode_str]
 keep_street = st.sidebar.checkbox("Giữ tên đường", True)
 short_name = st.sidebar.checkbox("Tên rút gọn", True)
-level = st.sidebar.number_input("Level", 1, 3 if mode_str == "LEGACY" else 2, 3 if mode_str == "LEGACY" else 2, step=1)
+level = st.sidebar.number_input(
+    "Level",
+    min_value=1,
+    max_value=3 if mode_str == "LEGACY" else 2,
+    value=3 if mode_str == "LEGACY" else 2,
+    step=1,
+)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Batch (CSV/Excel)")
+
 max_workers_default = max(1, min(4, (os.cpu_count() or 2) - 1))
-max_workers = st.sidebar.number_input("Số worker batch", min_value=1, max_value=max(1, os.cpu_count() or 1), value=max_workers_default, step=1)
-chunk_size = st.sidebar.number_input("Kích thước chunk", min_value=50, max_value=2000, value=300, step=50)
+max_workers = st.sidebar.number_input(
+    "Số worker batch",
+    min_value=1,
+    max_value=max(1, os.cpu_count() or 1),
+    value=max_workers_default,
+    step=1,
+)
+chunk_size = st.sidebar.number_input(
+    "Kích thước chunk",
+    min_value=50,
+    max_value=2000,
+    value=300,
+    step=50,
+)
 cache_db_path = st.sidebar.text_input("SQLite cache path", str(DEFAULT_CACHE_DB))
 uploaded = st.sidebar.file_uploader("Tải CSV/Excel", type=["csv", "xlsx", "xls"])
+
 address_col = None
 excel_sheet = None
 df_preview: Optional[pd.DataFrame] = None
 
 if uploaded is not None:
     ext = Path(uploaded.name).suffix.lower()
+
     if ext == ".csv":
-        encoding_choice = st.sidebar.selectbox("Encoding (CSV)", ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258", "cp1252"], index=0)
+        encoding_choice = st.sidebar.selectbox(
+            "Encoding (CSV)",
+            ["auto", "utf-8-sig", "utf-8", "latin1", "cp1258", "cp1252"],
+            index=0,
+        )
         try:
             df_preview = load_table(uploaded, encoding_choice)
-        except Exception as e:
-            st.sidebar.error(f"Lỗi đọc CSV: {e}")
+        except Exception as exc:
+            st.sidebar.error(f"Lỗi đọc CSV: {exc}")
     else:
         try:
             uploaded.seek(0)
             xls = pd.ExcelFile(uploaded)
             excel_sheet = st.sidebar.selectbox("Chọn sheet", xls.sheet_names, index=0)
             df_preview = load_table(uploaded, excel_sheet=excel_sheet)
-        except Exception as e:
-            st.sidebar.error(f"Lỗi đọc Excel: {e}")
+        except Exception as exc:
+            st.sidebar.error(f"Lỗi đọc Excel: {exc}")
+
     if df_preview is not None:
         enc_msg = st.session_state.get("_detected_encoding")
         if enc_msg:
             st.sidebar.caption(f"Detected: **{enc_msg}**")
         address_col = st.sidebar.selectbox("Chọn cột địa chỉ", list(df_preview.columns))
 
-st.markdown('<div class="card"><div class="card-title"><span class="badge">🔎</span> Phân tích nhanh</div>', unsafe_allow_html=True)
+
+# =========================
+# Quick parse / convert
+# =========================
+
+st.markdown(
+    """
+    <div class="section-card"><b>🔎 Phân tích nhanh</b></div>
+    """,
+    unsafe_allow_html=True,
+)
 st.caption("Ví dụ: 194 Trần Quang Khải, phường Lý Thái Tổ, quận Hoàn Kiếm, Hà Nội")
-address_input = st.text_input("Nhập địa chỉ", "194 Trần Quang Khải, phường Lý Thái Tổ, quận Hoàn Kiếm, Hà Nội")
+
+address_input = st.text_input(
+    "Nhập địa chỉ",
+    "194 Trần Quang Khải, phường Lý Thái Tổ, quận Hoàn Kiếm, Hà Nội",
+)
 
 c1, c2 = st.columns([1, 1])
 with c1:
-    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
     parse_clicked = st.button("Phân tích địa chỉ")
-    st.markdown('</div>', unsafe_allow_html=True)
 with c2:
-    st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
     convert_clicked = st.button("Chuẩn hóa (→ 2025)")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 if parse_clicked:
     try:
-        parsed = parse_address(address_input, mode=mode, keep_street=keep_street, level=int(level))
+        parsed = parse_address(
+            address_input,
+            mode=mode,
+            keep_street=keep_street,
+            level=int(level),
+        )
         if parsed:
-            st.success("🎯 Phân tích thành công")
+            st.success("Phân tích thành công")
             df_parsed = to_clean_df(parsed)
             st.dataframe(df_parsed, use_container_width=True)
-            st.session_state["last_points"] = df_parsed[["latitude", "longitude"]]
+            set_last_points_from_df(df_parsed)
         else:
             st.warning("⚠️ Không phân tích được địa chỉ.")
-    except Exception as e:
-        st.error(f"❌ Lỗi phân tích: {type(e).__name__}: {e}")
-        st.exception(e)
+    except Exception as exc:
+        st.error(f"❌ Lỗi phân tích: {type(exc).__name__}: {exc}")
+        st.exception(exc)
 
 if convert_clicked:
     try:
         converted = convert_address(address_input)
         if converted:
-            st.success("🔁 Kết quả sau chuẩn hóa (→ 2025)")
+            st.success("Kết quả sau chuẩn hóa (→ 2025)")
             df_converted = to_clean_df(converted)
             st.dataframe(df_converted, use_container_width=True)
+            set_last_points_from_df(df_converted)
         else:
             st.warning("⚠️ Không chuẩn hóa được địa chỉ.")
-    except Exception as e:
-        st.error(f"⚠️ Lỗi khi chuẩn hóa: {type(e).__name__}: {e}")
-        st.exception(e)
+    except Exception as exc:
+        st.error(f"⚠️ Lỗi khi chuẩn hóa: {type(exc).__name__}: {exc}")
+        st.exception(exc)
 
 with st.expander("🧭 Kiểm tra tọa độ (OSM + ranh xã)"):
-    c3, c4, c5 = st.columns([1, 1, .6])
+    c3, c4, c5 = st.columns([1, 1, 0.6])
     with c3:
         lat_in = st.number_input("Latitude", value=21.028, format="%.8f")
     with c4:
         lon_in = st.number_input("Longitude", value=105.834, format="%.8f")
     with c5:
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+        st.markdown("<div class='small-gap'></div>", unsafe_allow_html=True)
         rev_clicked = st.button("Reverse")
-        st.markdown('</div>', unsafe_allow_html=True)
+
     if rev_clicked:
         try:
             gc = load_gc()
             res = gc.geocode(float(lat_in), float(lon_in))
             if res:
                 st.success("✅ Đã xác định địa chỉ")
-                show = {"house_number": res.get("house_number"), "road": res.get("road"), "ward": res.get("ward"), "province": res.get("province"), "latitude": res.get("latitude"), "longitude": res.get("longitude"), "formatted": res.get("formatted")}
-                st.dataframe(pd.DataFrame([show]), use_container_width=True)
-                st.session_state["last_points"] = pd.DataFrame([{"latitude": show["latitude"], "longitude": show["longitude"]}])
+                show = {
+                    "house_number": res.get("house_number"),
+                    "road": res.get("road"),
+                    "ward": res.get("ward"),
+                    "province": res.get("province"),
+                    "latitude": res.get("latitude"),
+                    "longitude": res.get("longitude"),
+                    "formatted": res.get("formatted"),
+                }
+                df_show = pd.DataFrame([show])
+                st.dataframe(df_show, use_container_width=True)
+                set_last_points_from_df(df_show)
             else:
                 st.warning("⚠️ Không xác định được xã/phường hoặc OSM thiếu số nhà/đường.")
-        except Exception as e:
-            st.error(f"❌ Lỗi reverse: {type(e).__name__}: {e}")
-            st.exception(e)
+        except Exception as exc:
+            st.error(f"❌ Lỗi reverse: {type(exc).__name__}: {exc}")
+            st.exception(exc)
 
 if st.session_state.get("last_points") is not None:
     render_map(st.session_state["last_points"])
 
-st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="card"><div class="card-title"><span class="badge">📦</span> Xử lý hàng loạt</div>', unsafe_allow_html=True)
+# =========================
+# Batch
+# =========================
+
+st.markdown(
+    """
+    <div class="section-card"><b>📦 Xử lý hàng loạt</b></div>
+    """,
+    unsafe_allow_html=True,
+)
+
 if uploaded is None or df_preview is None:
     st.caption("Tải file CSV/Excel ở sidebar để bắt đầu.")
 else:
     st.write("**Xem nhanh dữ liệu đầu vào:**")
     st.dataframe(df_preview.head(20), use_container_width=True)
 
-    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
     run_batch = st.button("⚙️ Chạy chuẩn hóa")
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    cols_lower = {c.lower(): c for c in df_preview.columns}
-    has_latlon = ("latitude" in cols_lower and "longitude" in cols_lower)
+    cols_lower = {str(c).lower(): c for c in df_preview.columns}
+    has_latlon = "latitude" in cols_lower and "longitude" in cols_lower
+
     if has_latlon:
-        st.markdown('<div class="btn-ghost">', unsafe_allow_html=True)
-        run_rev = st.button("🧭 Reverse geocode (lat, lon)")
-        st.markdown('</div>', unsafe_allow_html=True)
+        run_rev = st.button("Reverse geocode (lat, lon)")
     else:
         run_rev = False
 
@@ -340,13 +505,22 @@ else:
                 total_unique = max(1, int(info["unique_total"]))
                 processed_unique = int(info["processed_unique"])
                 progress = min(1.0, processed_unique / total_unique)
-                progress_bar.progress(progress, text=f"Đang xử lý {processed_unique:,}/{int(info['unique_total']):,} địa chỉ unique")
+
+                progress_bar.progress(
+                    progress,
+                    text=(
+                        f"Đang xử lý {processed_unique:,}/"
+                        f"{int(info['unique_total']):,} địa chỉ unique"
+                    ),
+                )
                 live_elapsed.metric("Đang chạy", f"{float(info['elapsed_seconds']):.1f}s")
                 live_processed.metric("Đã xử lý unique", f"{processed_unique:,}")
                 live_cache.metric("Cache hit", f"{int(info['cache_hits']):,}")
                 live_caption.caption(
-                    f"Còn lại: {int(info['remaining_unique']):,} • Compute mới: {int(info['computed']):,} • "
-                    f"Lỗi: {int(info['invalid']):,} • Có geocoder: {int(info['used_geocoder']):,}"
+                    f"Còn lại: {int(info['remaining_unique']):,} • "
+                    f"Compute mới: {int(info['computed']):,} • "
+                    f"Lỗi: {int(info['invalid']):,} • "
+                    f"Có geocoder: {int(info['used_geocoder']):,}"
                 )
 
             with st.spinner("Đang chuẩn hóa..."):
@@ -359,18 +533,25 @@ else:
                     output_prefix="converted_",
                     chunk_size=int(chunk_size),
                     progress_callback=on_progress,
+                    parse_mode=mode,
+                    keep_street=keep_street,
+                    level=int(level),
                 )
 
             progress_bar.progress(1.0, text="Hoàn tất batch")
+
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Tổng dòng", f"{summary['total_rows']:,}")
             m2.metric("Địa chỉ unique", f"{summary['unique_rows']:,}")
             m3.metric("Cache hit", f"{summary['cache_hits']:,}")
             m4.metric("Thời gian", f"{summary['duration_seconds']}s")
+
             st.caption(
-                f"Dòng lỗi: {summary['error_rows']:,} • Dòng có geocoder: {summary['used_geocoder']:,} • "
+                f"Dòng lỗi: {summary['error_rows']:,} • "
+                f"Dòng có geocoder: {summary['used_geocoder']:,} • "
                 f"Worker: {int(max_workers)} • Chunk: {int(chunk_size)}"
             )
+
             st.success("✅ Xong!")
             st.dataframe(df_out.head(50), use_container_width=True)
             st.download_button(
@@ -379,9 +560,10 @@ else:
                 "converted_addresses.csv",
                 "text/csv",
             )
-        except Exception as e:
-            st.error(f"❌ Lỗi batch: {type(e).__name__}: {e}")
-            st.exception(e)
+
+        except Exception as exc:
+            st.error(f"❌ Lỗi batch: {type(exc).__name__}: {exc}")
+            st.exception(exc)
 
     if run_rev:
         try:
@@ -390,24 +572,38 @@ else:
                 lat_col = cols_lower["latitude"]
                 lon_col = cols_lower["longitude"]
                 rows = []
+
                 for _, r in df_preview.iterrows():
                     try:
-                        lat = float(r[lat_col])
-                        lon = float(r[lon_col])
+                        lat = float(str(r[lat_col]).replace(",", "."))
+                        lon = float(str(r[lon_col]).replace(",", "."))
                     except Exception:
-                        rows.append({**r.to_dict(), "formatted": "", "ward": "", "province": "", "road": "", "house_number": ""})
+                        rows.append(
+                            {
+                                **r.to_dict(),
+                                "formatted": "",
+                                "ward": "",
+                                "province": "",
+                                "road": "",
+                                "house_number": "",
+                            }
+                        )
                         continue
+
                     res = gc.geocode(lat, lon) or {}
-                    rows.append({
-                        **r.to_dict(),
-                        "house_number": res.get("house_number", ""),
-                        "road": res.get("road", ""),
-                        "ward": res.get("ward", ""),
-                        "province": res.get("province", ""),
-                        "formatted": res.get("formatted", ""),
-                    })
+                    rows.append(
+                        {
+                            **r.to_dict(),
+                            "house_number": res.get("house_number", ""),
+                            "road": res.get("road", ""),
+                            "ward": res.get("ward", ""),
+                            "province": res.get("province", ""),
+                            "formatted": res.get("formatted", ""),
+                        }
+                    )
                     time.sleep(1.1)
-                df_rev = pd.DataFrame(rows)
+
+            df_rev = pd.DataFrame(rows)
             st.success("✅ Xong!")
             st.dataframe(df_rev.head(50), use_container_width=True)
             st.download_button(
@@ -416,8 +612,6 @@ else:
                 "reverse_geocoded.csv",
                 "text/csv",
             )
-        except Exception as e:
-            st.error(f"❌ Lỗi reverse batch: {type(e).__name__}: {e}")
-            st.exception(e)
-
-st.markdown('</div>', unsafe_allow_html=True)
+        except Exception as exc:
+            st.error(f"❌ Lỗi reverse batch: {type(exc).__name__}: {exc}")
+            st.exception(exc)
